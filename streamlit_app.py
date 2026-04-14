@@ -203,6 +203,12 @@ def reset_sheet_sync_history_data() -> None:
     save_dashboard_state()
 
 
+def reset_completion_history_data() -> None:
+    st.session_state.completion_history = []
+    st.session_state.send_result = "교체완료 시점을 리셋했습니다."
+    save_dashboard_state()
+
+
 EDGE_UPLOAD_RULES = {
     "엣지 #1": {"periodDays": 15},
     "엣지 #2": {"periodDays": 15},
@@ -293,6 +299,9 @@ def init_state() -> None:
     if "sheet_sync_history" not in st.session_state:
         raw_history = saved_state.get("sheet_sync_history", load_sheet_sync_history())
         st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
+    if "completion_history" not in st.session_state:
+        raw_completion = saved_state.get("completion_history", [])
+        st.session_state.completion_history = raw_completion if isinstance(raw_completion, list) else []
     if "sheet_sync_hashes" not in st.session_state:
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
     if "teams_webhook_url" not in st.session_state:
@@ -322,9 +331,9 @@ def init_state() -> None:
 
 
 def get_status(rate: float, quality: int) -> str:
-    if quality >= 3 or rate >= 1:
+    if rate >= 1:
         return "replace"
-    if quality >= 1 or rate >= 0.8:
+    if rate >= 0.6:
         return "caution"
     return "normal"
 
@@ -602,6 +611,7 @@ def save_dashboard_state() -> None:
         "last_sheet_sync_at": st.session_state.get("last_sheet_sync_at", ""),
         "last_sheet_sync_details": normalize_last_sheet_sync_details(st.session_state.get("last_sheet_sync_details", [])),
         "sheet_sync_history": normalize_sheet_sync_history(st.session_state.get("sheet_sync_history", [])),
+        "completion_history": st.session_state.get("completion_history", []),
         "sheet_sync_hashes": st.session_state.get("sheet_sync_hashes", {}),
         "teams_webhook_url": st.session_state.get("teams_webhook_url", TEAMS_DEFAULT_WEBHOOK),
         "auto_sheet_url": st.session_state.get("auto_sheet_url", DEFAULT_GOOGLE_SHEET_URL),
@@ -1225,6 +1235,12 @@ def handle_action(row_id: int) -> None:
         for detail in st.session_state.get("last_sheet_sync_details", [])
         if normalize_machine_name(str(detail.get("machine", detail.get("설비", ""))).strip()) != selected_machine
     ]
+    completion_entry = {
+        "교체완료시각": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
+        "설비": selected_item["machine"],
+        "날물명": get_display_blade_name(selected_item),
+    }
+    st.session_state.completion_history = [completion_entry, *st.session_state.get("completion_history", [])]
     message = f"{selected_item['machine']} 교체 완료 처리되었습니다."
     try:
         send_teams_complete_alert(selected_item)
@@ -1236,11 +1252,9 @@ def handle_action(row_id: int) -> None:
 
 
 def get_action_label(row: dict[str, Any]) -> str:
-    if row["status"] == "replace":
-        return "교체필요"
-    if row["status"] == "caution":
-        return "주의"
-    return "불필요"
+    if row.get("rate", 0) >= 1:
+        return "교체"
+    return "정상"
 
 
 def render_kpis(enriched: list[dict[str, Any]]) -> None:
@@ -1287,7 +1301,12 @@ def render_action_badge(status: str) -> str:
 
 
 def render_usage_bar(rate: float, status: str) -> str:
-    styles = STATUS_STYLES[status]
+    if rate >= 1:
+        styles = STATUS_STYLES["replace"]
+    elif rate >= 0.6:
+        styles = STATUS_STYLES["caution"]
+    else:
+        styles = STATUS_STYLES["normal"]
     width = max(0, min(100, round(rate * 100)))
     return (
         "<div style='display:flex;align-items:center;gap:12px;'>"
@@ -1335,8 +1354,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
         st.markdown(
             """
             <div style="padding:14px 18px;border:1px solid #e2e8f0;border-radius:18px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);margin-bottom:14px;box-shadow:0 8px 24px rgba(15,23,42,0.04);">
-              <div style="display:grid;grid-template-columns:0.8fr 0.8fr 1.2fr 1.4fr 1fr 1.2fr 1.1fr 1fr 1fr;gap:16px;font-size:13px;font-weight:700;color:#64748b;">
-                <div>상태</div>
+              <div style="display:grid;grid-template-columns:0.8fr 1.2fr 1.4fr 1fr 1.2fr 1.1fr 1fr 1fr;gap:16px;font-size:13px;font-weight:700;color:#64748b;">
                 <div>라인</div>
                 <div>설비</div>
                 <div>날물명</div>
@@ -1354,23 +1372,22 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
         for row in rows:
             line_label = "엣지" if row["line"] == "엣지" else "보링"
             with st.container(border=True):
-                row_cols = st.columns([0.8, 0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
-                row_cols[0].markdown(render_status_badge(row["status"]), unsafe_allow_html=True)
-                row_cols[1].markdown(
+                row_cols = st.columns([0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
+                row_cols[0].markdown(
                     f"<span style='display:inline-block;padding:5px 10px;border-radius:999px;background:#eef2ff;color:#334155;font-size:12px;font-weight:700;'>{line_label}</span>",
                     unsafe_allow_html=True,
                 )
-                row_cols[2].markdown(f"**{row['machine']}**")
-                row_cols[3].write(row["displayBladeName"])
-                row_cols[4].markdown(f"**{row['displayStandard']}**")
-                row_cols[5].markdown(render_usage_bar(row["rate"], row["status"]), unsafe_allow_html=True)
-                row_cols[6].markdown(f"**{row['displayRemaining']}**")
-                row_cols[7].write(row["predictedDate"])
-                if row["status"] == "replace":
+                row_cols[1].markdown(f"**{row['machine']}**")
+                row_cols[2].write(row["displayBladeName"])
+                row_cols[3].markdown(f"**{row['displayStandard']}**")
+                row_cols[4].markdown(render_usage_bar(row["rate"], row["status"]), unsafe_allow_html=True)
+                row_cols[5].markdown(f"**{row['displayRemaining']}**")
+                row_cols[6].write(row["predictedDate"])
+                if get_action_label(row) == "교체":
                     button_type = "primary"
                 else:
                     button_type = "secondary"
-                if row_cols[8].button(get_action_label(row), key=f"table_action_{row['id']}", use_container_width=True, type=button_type):
+                if row_cols[7].button(get_action_label(row), key=f"table_action_{row['id']}", use_container_width=True, type=button_type):
                     handle_action(row["id"])
                     st.rerun()
 
@@ -1522,6 +1539,16 @@ def main() -> None:
             st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
         else:
             st.info("아직 반영 이력이 없습니다.")
+
+        st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
+        st.caption("교체완료 시점")
+        if st.session_state.get("completion_history"):
+            completion_df = pd.DataFrame(st.session_state.get("completion_history", []))
+            ordered_columns = ["교체완료시각", "설비", "날물명"]
+            completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
+            st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True)
+        else:
+            st.info("아직 교체완료 이력이 없습니다.")
 
     with right:
         st.subheader("교체 우선순위 TOP 5")

@@ -782,6 +782,34 @@ def machine_matches_target(machine: str, target_machine: str) -> bool:
     return machine == target_machine
 
 
+def infer_line_from_machine(machine: str) -> str:
+    normalized = normalize_machine_name(machine)
+    if normalized.startswith("엣지"):
+        return "엣지"
+    if normalized.startswith("런닝"):
+        return "런닝"
+    if normalized.startswith("양면"):
+        return "양면"
+    if normalized.startswith("포인트"):
+        return "포인트"
+    if normalized.startswith("수직"):
+        return "수직"
+    return ""
+
+
+def parse_date_only(value: Any) -> date | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    normalized = normalize_display_timestamp(raw)
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(normalized[:19] if fmt == "%Y-%m-%d %H:%M:%S" else normalized[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def send_teams_complete_alert(row: dict[str, Any]) -> None:
     webhook_url = st.session_state.teams_webhook_url.strip()
     if not webhook_url:
@@ -1514,6 +1542,24 @@ def main() -> None:
         active_machine_filter = st.session_state.get("line_machine_filter", "전체")
         if active_line_filter != "all" and active_machine_filter != "전체":
             filtered = [row for row in filtered if row["machine"] == active_machine_filter]
+        min_filter_date, max_filter_date = None, None
+        date_candidates = []
+        for detail in st.session_state.get("last_sheet_sync_details", []):
+            parsed = parse_date_only(detail.get("start_date", detail.get("시작일", "")))
+            if parsed:
+                date_candidates.append(parsed)
+        for entry in st.session_state.get("sheet_sync_history", []):
+            parsed = parse_date_only(entry.get("반영시각", ""))
+            if parsed:
+                date_candidates.append(parsed)
+        for entry in st.session_state.get("completion_history", []):
+            parsed = parse_date_only(entry.get("교체완료시각", ""))
+            if parsed:
+                date_candidates.append(parsed)
+        if date_candidates:
+            filter_cols = st.columns(2)
+            min_filter_date = filter_cols[0].date_input("시작 날짜", value=min(date_candidates), key="history_start_date")
+            max_filter_date = filter_cols[1].date_input("종료 날짜", value=max(date_candidates), key="history_end_date")
         st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
         render_equipment_table(filtered)
 
@@ -1522,9 +1568,24 @@ def main() -> None:
         if st.session_state.last_sheet_sync_details:
             detail_df = pd.DataFrame(st.session_state.last_sheet_sync_details)
             detail_df.columns = ["설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+            detail_df["설비"] = detail_df["설비"].apply(normalize_machine_name)
+            detail_df["_line"] = detail_df["설비"].apply(infer_line_from_machine)
+            detail_df = detail_df[
+                detail_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
+            ]
+            if active_line_filter != "all" and active_machine_filter != "전체":
+                detail_df = detail_df[detail_df["설비"] == active_machine_filter]
+            if min_filter_date and max_filter_date:
+                detail_df = detail_df[
+                    detail_df["시작일"].apply(lambda value: (parsed := parse_date_only(value)) is not None and min_filter_date <= parsed <= max_filter_date)
+                ]
+            detail_df = detail_df.drop(columns=["_line"], errors="ignore")
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
                 detail_df[column] = detail_df[column].where(detail_df[column].notna(), "")
-            st.dataframe(format_sync_display_dataframe(detail_df), use_container_width=True)
+            if not detail_df.empty:
+                st.dataframe(format_sync_display_dataframe(detail_df), use_container_width=True)
+            else:
+                st.info("조건에 맞는 반영 결과가 없습니다.")
         else:
             st.info("아직 반영된 결과가 없습니다.")
 
@@ -1534,12 +1595,27 @@ def main() -> None:
             history_df = pd.DataFrame(st.session_state.sheet_sync_history)
             ordered_columns = ["반영시각", "대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
             history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
+            history_df["설비"] = history_df["설비"].apply(normalize_machine_name)
+            history_df["_line"] = history_df["설비"].apply(infer_line_from_machine)
+            history_df = history_df[
+                history_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
+            ]
+            if active_line_filter != "all" and active_machine_filter != "전체":
+                history_df = history_df[history_df["설비"] == active_machine_filter]
+            if min_filter_date and max_filter_date:
+                history_df = history_df[
+                    history_df["반영시각"].apply(lambda value: (parsed := parse_date_only(value)) is not None and min_filter_date <= parsed <= max_filter_date)
+                ]
             if "대상" in history_df.columns and "날물명" in history_df.columns:
                 history_df.loc[history_df["대상"] == "보링 전체", "날물명"] = ""
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
                 if column in history_df.columns:
                     history_df[column] = history_df[column].where(history_df[column].notna(), "")
-            st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
+            history_df = history_df.drop(columns=["_line"], errors="ignore")
+            if not history_df.empty:
+                st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
+            else:
+                st.info("조건에 맞는 반영 이력이 없습니다.")
         else:
             st.info("아직 반영 이력이 없습니다.")
 
@@ -1549,7 +1625,20 @@ def main() -> None:
             completion_df = pd.DataFrame(st.session_state.get("completion_history", []))
             ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량"]
             completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
-            st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True)
+            completion_df["설비"] = completion_df["설비"].apply(normalize_machine_name)
+            completion_df = completion_df[
+                completion_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
+            ]
+            if active_line_filter != "all" and active_machine_filter != "전체":
+                completion_df = completion_df[completion_df["설비"] == active_machine_filter]
+            if min_filter_date and max_filter_date:
+                completion_df = completion_df[
+                    completion_df["교체완료시각"].apply(lambda value: (parsed := parse_date_only(value)) is not None and min_filter_date <= parsed <= max_filter_date)
+                ]
+            if not completion_df.empty:
+                st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True)
+            else:
+                st.info("조건에 맞는 교체완료 이력이 없습니다.")
         else:
             st.info("아직 교체완료 이력이 없습니다.")
 

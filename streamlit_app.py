@@ -804,6 +804,7 @@ def send_teams_complete_alert(row: dict[str, Any]) -> None:
                             "facts": [
                                 {"title": "설비", "value": row["machine"]},
                                 {"title": "날물", "value": row["bladeName"]},
+                                {"title": "교체 시점 사용량", "value": format_cycle_value(row, parse_numeric_value(row.get("usage", 0)))},
                                 {"title": "조치", "value": "교체완료"},
                                 {"title": "처리일", "value": date.today().isoformat()},
                             ],
@@ -879,13 +880,12 @@ def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
         if not machine or row.get("status") != "replace":
             continue
 
-        signature = get_replace_alert_signature(row)
-        if next_history.get(machine) == signature:
+        if next_history.get(machine) == "sent":
             continue
 
         try:
             send_teams_replace_alert(row)
-            next_history[machine] = signature
+            next_history[machine] = "sent"
             latest_message = f"{machine} 설비 날물 교체 알림을 전송했습니다."
         except Exception as exc:
             latest_message = f"{machine} 설비 날물 교체 알림 전송 실패: {exc}"
@@ -1213,6 +1213,8 @@ def handle_action(row_id: int) -> None:
 
     today = date.today().isoformat()
     selected_machine = selected_item["machine"]
+    completed_usage = parse_numeric_value(selected_item.get("usage", 0))
+    completed_usage_label = format_cycle_value(selected_item, completed_usage)
     st.session_state.equipment_data = [
         {
             **item,
@@ -1239,6 +1241,7 @@ def handle_action(row_id: int) -> None:
         "교체완료시각": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
         "설비": selected_item["machine"],
         "날물명": get_display_blade_name(selected_item),
+        "교체 시점 사용량": completed_usage_label,
     }
     st.session_state.completion_history = [completion_entry, *st.session_state.get("completion_history", [])]
     message = f"{selected_item['machine']} 교체 완료 처리되었습니다."
@@ -1544,7 +1547,7 @@ def main() -> None:
         st.caption("교체완료 시점")
         if st.session_state.get("completion_history"):
             completion_df = pd.DataFrame(st.session_state.get("completion_history", []))
-            ordered_columns = ["교체완료시각", "설비", "날물명"]
+            ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량"]
             completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
             st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True)
         else:

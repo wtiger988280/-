@@ -22,6 +22,7 @@ LOG_DIR = WORK_DIR / "logs"
 LATEST_UPLOAD_INFO_PATH = LOG_DIR / "latest_sheet_upload.json"
 SHEET_SYNC_HISTORY_PATH = LOG_DIR / "sheet_sync_history.json"
 DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
+UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
 
 
 BORING_MACHINE_CONFIG = [
@@ -348,10 +349,41 @@ def normalize_edge_blade_name(machine: str, blade_name: Any) -> str:
 
 
 def load_latest_upload_info() -> dict[str, str]:
-    if not LATEST_UPLOAD_INFO_PATH.exists():
-        return {}
+    local_info: dict[str, str] = {}
+    if LATEST_UPLOAD_INFO_PATH.exists():
+        try:
+            local_info = json.loads(LATEST_UPLOAD_INFO_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            local_info = {}
+
+    remote_info = load_latest_upload_info_from_sheet()
+    if remote_info.get("updated_at"):
+        if not local_info.get("updated_at") or remote_info["updated_at"] >= local_info.get("updated_at", ""):
+            return remote_info
+    return local_info
+
+
+def load_latest_upload_info_from_sheet() -> dict[str, str]:
     try:
-        return json.loads(LATEST_UPLOAD_INFO_PATH.read_text(encoding="utf-8"))
+        csv_url = to_google_sheet_csv_url(DEFAULT_GOOGLE_SHEET_URL, worksheet_name=UPLOAD_INFO_WORKSHEET_NAME)
+        session = requests.Session()
+        session.trust_env = False
+        response = session.get(csv_url, timeout=15)
+        response.raise_for_status()
+        df = pd.read_csv(BytesIO(response.content))
+        if df.empty:
+            return {}
+        df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
+        row = df.iloc[0].fillna("")
+        return {
+            "spreadsheet_name": str(row.get("spreadsheet_name", "")).strip(),
+            "spreadsheet_url": str(row.get("spreadsheet_url", "")).strip(),
+            "worksheet_title": str(row.get("worksheet_title", "")).strip(),
+            "worksheet_gid": str(row.get("worksheet_gid", "")).strip(),
+            "erp_file_name": str(row.get("erp_file_name", "")).strip(),
+            "dataset_type": str(row.get("dataset_type", "")).strip(),
+            "updated_at": str(row.get("updated_at", "")).strip(),
+        }
     except Exception:
         return {}
 
@@ -1434,15 +1466,18 @@ def main() -> None:
         render_equipment_table(filtered)
 
         st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
+        st.caption("최근 구글 스프레드시트 반영 결과")
         if st.session_state.last_sheet_sync_details:
             detail_df = pd.DataFrame(st.session_state.last_sheet_sync_details)
             detail_df.columns = ["설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
                 detail_df[column] = detail_df[column].where(detail_df[column].notna(), "")
-            st.caption("최근 구글 스프레드시트 반영 결과")
             st.dataframe(format_sync_display_dataframe(detail_df), use_container_width=True)
+        else:
+            st.info("아직 반영된 결과가 없습니다.")
 
         st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
+        st.caption("구글 스프레드시트 반영 이력")
         if st.session_state.sheet_sync_history:
             history_df = pd.DataFrame(st.session_state.sheet_sync_history)
             ordered_columns = ["반영시각", "대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
@@ -1452,8 +1487,9 @@ def main() -> None:
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
                 if column in history_df.columns:
                     history_df[column] = history_df[column].where(history_df[column].notna(), "")
-            st.caption("구글 스프레드시트 반영 이력")
             st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
+        else:
+            st.info("아직 반영 이력이 없습니다.")
 
     with right:
         st.subheader("교체 우선순위 TOP 5")

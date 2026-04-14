@@ -1554,8 +1554,8 @@ def main() -> None:
         st.caption("최근 구글 스프레드시트 반영 결과")
         if st.session_state.last_sheet_sync_details:
             detail_df = pd.DataFrame(st.session_state.last_sheet_sync_details)
-            detail_df.columns = ["설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
-            detail_date_options = build_date_filter_options(detail_df["시작일"].tolist())
+            detail_df.columns = ["설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
+            detail_date_options = build_date_filter_options(detail_df["데이터 기준일자"].tolist())
             selected_detail_date = st.selectbox("날짜", detail_date_options, key="detail_date_filter")
             detail_df["설비"] = detail_df["설비"].apply(normalize_machine_name)
             detail_df["_line"] = detail_df["설비"].apply(infer_line_from_machine)
@@ -1566,7 +1566,7 @@ def main() -> None:
                 detail_df = detail_df[detail_df["설비"] == active_machine_filter]
             if selected_detail_date != "전체":
                 detail_df = detail_df[
-                    detail_df["시작일"].apply(lambda value: (parsed := parse_date_only(value)) is not None and parsed.isoformat() == selected_detail_date)
+                    detail_df["데이터 기준일자"].apply(lambda value: (parsed := parse_date_only(value)) is not None and parsed.isoformat() == selected_detail_date)
                 ]
             detail_df = detail_df.drop(columns=["_line"], errors="ignore")
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
@@ -1584,7 +1584,8 @@ def main() -> None:
             history_df = pd.DataFrame(st.session_state.sheet_sync_history)
             history_date_options = build_date_filter_options(history_df["반영시각"].tolist())
             selected_history_date = st.selectbox("날짜", history_date_options, key="history_date_filter")
-            ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+            ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
+            history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
             history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
             history_df["설비"] = history_df["설비"].apply(normalize_machine_name)
             history_df["_line"] = history_df["설비"].apply(infer_line_from_machine)

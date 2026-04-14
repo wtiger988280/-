@@ -1484,35 +1484,17 @@ def main() -> None:
     with left:
         st.subheader("설비별 교체 현황")
         available_lines = [line for line in LINE_FILTER_ORDER if any(row["line"] == line for row in enriched)]
-        line_button_cols = st.columns(len(available_lines) + 1)
-        if line_button_cols[0].button("전체", key="line_toggle_all", use_container_width=True, type="primary" if st.session_state.get("line_filter_toggle", "all") == "all" else "secondary"):
-            st.session_state.line_filter_toggle = "all"
-            st.session_state.line_machine_filter = "전체"
-            st.rerun()
-        for idx, line_name in enumerate(available_lines, start=1):
-            active = st.session_state.get("line_filter_toggle", "all") == line_name
-            if line_button_cols[idx].button(line_name, key=f"line_toggle_{line_name}", use_container_width=True, type="primary" if active else "secondary"):
-                st.session_state.line_filter_toggle = line_name
-                st.session_state.line_machine_filter = "전체"
-                st.rerun()
-        active_line_filter = st.session_state.get("line_filter_toggle", "all")
-        if active_line_filter != "all":
-            machine_options = ["전체", *[machine for machine in LINE_MACHINE_OPTIONS.get(active_line_filter, []) if any(row["machine"] == machine for row in enriched)]]
-            st.selectbox(
-                f"{active_line_filter} 세부 선택",
-                machine_options,
-                key="line_machine_filter",
-            )
-        filtered = [
-            row
-            for row in filtered
-            if active_line_filter == "all" or row["line"] == active_line_filter
-        ]
-        active_machine_filter = st.session_state.get("line_machine_filter", "전체")
-        if active_line_filter != "all" and active_machine_filter != "전체":
-            filtered = [row for row in filtered if row["machine"] == active_machine_filter]
-        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
-        render_equipment_table(filtered)
+        tab_labels = ["전체", *available_lines]
+        tabs = st.tabs(tab_labels)
+        for idx, tab_label in enumerate(tab_labels):
+            with tabs[idx]:
+                tab_filtered = [
+                    row
+                    for row in filtered
+                    if tab_label == "전체" or row["line"] == tab_label
+                ]
+                st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+                render_equipment_table(tab_filtered)
 
         st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
         st.caption("최근 구글 스프레드시트 반영 결과")

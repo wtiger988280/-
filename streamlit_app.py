@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -23,6 +24,7 @@ LATEST_UPLOAD_INFO_PATH = LOG_DIR / "latest_sheet_upload.json"
 SHEET_SYNC_HISTORY_PATH = LOG_DIR / "sheet_sync_history.json"
 DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
 UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
+KST = ZoneInfo("Asia/Seoul")
 
 
 BORING_MACHINE_CONFIG = [
@@ -90,6 +92,36 @@ def build_initial_raw_data() -> list[dict[str, Any]]:
     return rows
 
 
+def now_kst() -> datetime:
+    return datetime.now(KST)
+
+
+def normalize_display_timestamp(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            parsed = datetime.strptime(raw, fmt)
+            if parsed.hour <= 3:
+                parsed = parsed.replace(tzinfo=ZoneInfo("UTC")).astimezone(KST)
+            else:
+                parsed = parsed.replace(tzinfo=KST)
+            return parsed.strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+    try:
+        parsed_iso = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed_iso.tzinfo is None:
+            if parsed_iso.hour <= 3:
+                parsed_iso = parsed_iso.replace(tzinfo=ZoneInfo("UTC"))
+            else:
+                parsed_iso = parsed_iso.replace(tzinfo=KST)
+        return parsed_iso.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return raw
+
+
 INITIAL_RAW_DATA = build_initial_raw_data()
 
 
@@ -131,7 +163,7 @@ def ensure_default_equipment_rows(data: list[dict[str, Any]]) -> list[dict[str, 
 
 def reset_all_usage_data() -> None:
     default_map = {equipment_row_key(row): row for row in INITIAL_RAW_DATA}
-    reset_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    reset_at = now_kst().strftime("%Y-%m-%d %H:%M:%S")
     next_rows: list[dict[str, Any]] = []
     for row in st.session_state.get("equipment_data", []):
         key = equipment_row_key(row)
@@ -442,7 +474,7 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
 
         normalized.append(
             {
-                "반영시각": sync_at,
+                "반영시각": normalize_display_timestamp(sync_at),
                 "대상": target,
                 "설비": machine,
                 "날물명": blade_name,
@@ -494,7 +526,7 @@ def restore_last_sync_result_from_history() -> bool:
     if not history:
         return False
 
-    latest_sync_at = str(history[0].get("반영시각", "")).strip()
+    latest_sync_at = normalize_display_timestamp(history[0].get("반영시각", ""))
     if not latest_sync_at:
         return False
 
@@ -1129,7 +1161,7 @@ def sync_from_google_sheet(
             }
         )
 
-    sync_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sync_time = now_kst().strftime("%Y-%m-%d %H:%M:%S")
     if grouped:
         synced_label = ", ".join(f"{machine}/{blade}" if blade else machine for machine, blade in grouped.keys())
     else:
@@ -1151,7 +1183,7 @@ def sync_from_google_sheet(
     if history_entries and not is_duplicate_sync:
         st.session_state.sheet_sync_history = history_entries + st.session_state.sheet_sync_history
         save_sheet_sync_history(st.session_state.sheet_sync_history)
-    st.session_state.last_sheet_sync_at = sync_time
+    st.session_state.last_sheet_sync_at = normalize_display_timestamp(sync_time)
     st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(sync_details)
     if not is_duplicate_sync:
         updated_hashes = [*existing_hashes, sync_hash]

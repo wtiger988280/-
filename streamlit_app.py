@@ -375,6 +375,24 @@ def get_machine_blade_summary(machine: str, rows: list[dict[str, Any]] | None = 
     return ", ".join(blade_names)
 
 
+def get_history_blade_list(machine: str, rows: list[dict[str, Any]] | None = None) -> list[str]:
+    source_rows = rows if rows is not None else st.session_state.get("equipment_data", INITIAL_RAW_DATA)
+    machine_rows = [row for row in source_rows if str(row.get("machine", "")).strip() == machine]
+    preferred_order = [
+        "?15 ??",
+        "?20 ??",
+        "?12(??) ??",
+        "?8(??) ??",
+        "?5(??) ??",
+        "?35 ??",
+    ]
+    available = []
+    for label in preferred_order:
+        if any(get_display_blade_name(row) == label for row in machine_rows):
+            available.append(label)
+    return available
+
+
 def normalize_edge_blade_name(machine: str, blade_name: Any) -> str:
     normalized_machine = normalize_machine_name(machine)
     raw_blade_name = str(blade_name or "").strip()
@@ -1558,8 +1576,23 @@ def main() -> None:
             ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
             history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
             history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
-            history_df["설비"] = history_df["설비"].apply(normalize_machine_name)
-            history_df["_line"] = history_df["설비"].apply(infer_line_from_machine)
+            history_df["??"] = history_df["??"].apply(normalize_machine_name)
+            expanded_history_rows = []
+            for _, history_row in history_df.iterrows():
+                blade_name = str(history_row.get("???", "")).strip()
+                if blade_name:
+                    expanded_history_rows.append(history_row.to_dict())
+                    continue
+                blade_list = get_history_blade_list(str(history_row.get("??", "")).strip())
+                if blade_list:
+                    for blade in blade_list:
+                        copied = history_row.to_dict()
+                        copied["???"] = blade
+                        expanded_history_rows.append(copied)
+                else:
+                    expanded_history_rows.append(history_row.to_dict())
+            history_df = pd.DataFrame(expanded_history_rows)
+            history_df["_line"] = history_df["??"].apply(infer_line_from_machine)
             history_df = history_df[
                 history_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
             ]

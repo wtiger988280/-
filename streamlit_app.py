@@ -1599,8 +1599,8 @@ def main() -> None:
             ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
             history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
             history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
-            history_df["??"] = history_df["??"].map(normalize_machine_name)
-            history_df["_line"] = history_df["??"].map(infer_line_from_machine)
+            history_df["설비"] = history_df["설비"].map(normalize_machine_name)
+            history_df["_line"] = history_df["설비"].map(infer_line_from_machine)
             history_df = history_df[
                 history_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
             ]

@@ -833,6 +833,29 @@ def build_date_filter_options(values: list[Any]) -> list[str]:
     return ["전체", *unique_dates]
 
 
+def expand_history_rows_by_blade(history_df: pd.DataFrame) -> pd.DataFrame:
+    if history_df.empty:
+        return history_df
+
+    expanded_rows: list[dict[str, Any]] = []
+    for _, history_row in history_df.iterrows():
+        row_dict = history_row.to_dict()
+        machine = str(row_dict.get("설비", "")).strip()
+        blade_name = str(row_dict.get("날물명", "")).strip()
+        if blade_name:
+            expanded_rows.append(row_dict)
+            continue
+        blade_list = get_history_blade_list(machine)
+        if blade_list:
+            for blade in blade_list:
+                copied = dict(row_dict)
+                copied["날물명"] = blade
+                expanded_rows.append(copied)
+        else:
+            expanded_rows.append(row_dict)
+    return pd.DataFrame(expanded_rows)
+
+
 def send_teams_complete_alert(row: dict[str, Any]) -> None:
     webhook_url = st.session_state.teams_webhook_url.strip()
     if not webhook_url:
@@ -1576,23 +1599,8 @@ def main() -> None:
             ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
             history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
             history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
-            history_df["??"] = history_df["??"].apply(normalize_machine_name)
-            expanded_history_rows = []
-            for _, history_row in history_df.iterrows():
-                blade_name = str(history_row.get("???", "")).strip()
-                if blade_name:
-                    expanded_history_rows.append(history_row.to_dict())
-                    continue
-                blade_list = get_history_blade_list(str(history_row.get("??", "")).strip())
-                if blade_list:
-                    for blade in blade_list:
-                        copied = history_row.to_dict()
-                        copied["???"] = blade
-                        expanded_history_rows.append(copied)
-                else:
-                    expanded_history_rows.append(history_row.to_dict())
-            history_df = pd.DataFrame(expanded_history_rows)
-            history_df["_line"] = history_df["??"].apply(infer_line_from_machine)
+            history_df["??"] = history_df["??"].map(normalize_machine_name)
+            history_df["_line"] = history_df["??"].map(infer_line_from_machine)
             history_df = history_df[
                 history_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
             ]
@@ -1604,6 +1612,7 @@ def main() -> None:
                 history_df = history_df[
                     history_df["반영시각"].apply(lambda value: (parsed := parse_date_only(value)) is not None and parsed.isoformat() == selected_history_date)
                 ]
+            history_df = expand_history_rows_by_blade(history_df)
             machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_history_machine = history_filter_cols[1].selectbox("설비", machine_options, key="history_machine_filter")
             if selected_history_machine != "전체":

@@ -1581,6 +1581,27 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stPopover"] > button {
+            width: 100% !important;
+            min-height: 38px !important;
+            background: #f1f5f9 !important;
+            color: #0f172a !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 0.5rem !important;
+            justify-content: space-between !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stPopover"] > button:hover {
+            background: #e2e8f0 !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     latest_info = refresh_auto_sheet_target()
     auto_sheet_url = st.session_state.auto_sheet_url
     auto_sheet_name = st.session_state.auto_sheet_name
@@ -1715,7 +1736,7 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 history_df = history_df[history_df["설비"] == active_machine_filter]
-            history_filter_cols = st.columns([1.3, 1, 1])
+            history_filter_cols = st.columns([1.15, 1, 1])
             history_df = apply_date_popover_filter(history_df, "반영시각", "history", history_filter_cols[0])
             history_df = expand_history_rows_by_blade(history_df)
             machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
@@ -1761,7 +1782,7 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 completion_df = completion_df[completion_df["설비"] == active_machine_filter]
-            completion_filter_cols = st.columns([1.3, 1, 1])
+            completion_filter_cols = st.columns([1.15, 1, 1])
             completion_df = apply_date_popover_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[0])
             completion_machine_options = ["전체", *sorted([value for value in completion_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_completion_machine = completion_filter_cols[1].selectbox("설비", completion_machine_options, key="completion_machine_filter")

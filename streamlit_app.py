@@ -22,6 +22,7 @@ WORK_DIR = Path(__file__).resolve().parent
 LOG_DIR = WORK_DIR / "logs"
 LATEST_UPLOAD_INFO_PATH = LOG_DIR / "latest_sheet_upload.json"
 SHEET_SYNC_HISTORY_PATH = LOG_DIR / "sheet_sync_history.json"
+COMPLETION_HISTORY_PATH = LOG_DIR / "completion_history.json"
 DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
 UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
 KST = ZoneInfo("Asia/Seoul")
@@ -205,6 +206,7 @@ def reset_sheet_sync_history_data() -> None:
 
 def reset_completion_history_data() -> None:
     st.session_state.completion_history = []
+    save_completion_history([])
     st.session_state.send_result = "교체완료 시점을 리셋했습니다."
     save_dashboard_state()
 
@@ -300,7 +302,7 @@ def init_state() -> None:
         raw_history = saved_state.get("sheet_sync_history", load_sheet_sync_history())
         st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
     if "completion_history" not in st.session_state:
-        raw_completion = saved_state.get("completion_history", [])
+        raw_completion = saved_state.get("completion_history", load_completion_history())
         st.session_state.completion_history = raw_completion if isinstance(raw_completion, list) else []
     if "sheet_sync_hashes" not in st.session_state:
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
@@ -469,6 +471,21 @@ def save_sheet_sync_history(history: list[dict[str, Any]]) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     normalized = normalize_sheet_sync_history(history)
     SHEET_SYNC_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_completion_history() -> list[dict[str, Any]]:
+    if not COMPLETION_HISTORY_PATH.exists():
+        return []
+    try:
+        data = json.loads(COMPLETION_HISTORY_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_completion_history(history: list[dict[str, Any]]) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    COMPLETION_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1328,6 +1345,7 @@ def handle_action(row_id: int) -> None:
     except Exception as exc:
         message += f" Teams 알림 전송 실패: {exc}"
     st.session_state.send_result = message
+    save_completion_history(st.session_state.get("completion_history", []))
     save_dashboard_state()
 
 

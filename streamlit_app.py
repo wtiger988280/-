@@ -1587,16 +1587,29 @@ def main() -> None:
         div[data-testid="stPopover"] > button {
             width: 100% !important;
             min-height: 38px !important;
-            background: #f1f5f9 !important;
+            background: rgb(241, 245, 249) !important;
             color: #0f172a !important;
             border: 1px solid #e2e8f0 !important;
             border-radius: 0.5rem !important;
+            display: flex !important;
+            align-items: center !important;
             justify-content: space-between !important;
+            text-align: left !important;
             box-shadow: none !important;
+            padding: 0.375rem 0.75rem !important;
         }
         div[data-testid="stPopover"] > button:hover {
-            background: #e2e8f0 !important;
+            background: rgb(241, 245, 249) !important;
             border: 1px solid #cbd5e1 !important;
+        }
+        div[data-testid="stPopover"] > button p {
+            margin: 0 !important;
+            text-align: left !important;
+            flex: 1 1 auto !important;
+        }
+        div[data-testid="stPopover"] > button svg {
+            flex: 0 0 auto !important;
+            margin-left: 0.5rem !important;
         }
         </style>
         """,

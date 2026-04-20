@@ -193,14 +193,14 @@ def reset_all_usage_data() -> None:
 def reset_last_sheet_sync_result() -> None:
     st.session_state.last_sheet_sync_details = []
     st.session_state.last_sheet_sync_at = ""
-    st.session_state.send_result = "최근 구글 스프레드시트 반영 결과를 리셋했습니다."
+    st.session_state.send_result = "데이터 반영 이력을 리셋했습니다."
     save_dashboard_state()
 
 
 def reset_sheet_sync_history_data() -> None:
     st.session_state.sheet_sync_history = []
     save_sheet_sync_history([])
-    st.session_state.send_result = "구글 스프레드시트 반영 이력을 리셋했습니다."
+    st.session_state.send_result = "데이터 반영 이력을 리셋했습니다."
     save_dashboard_state()
 
 
@@ -851,6 +851,54 @@ def parse_date_only(value: Any) -> date | None:
 def build_date_filter_options(values: list[Any]) -> list[str]:
     unique_dates = sorted({parsed.isoformat() for value in values if (parsed := parse_date_only(value)) is not None}, reverse=True)
     return ["전체", *unique_dates]
+
+
+def build_year_month_day_options(values: list[Any]) -> tuple[list[str], dict[str, list[str]], dict[tuple[str, str], list[str]]]:
+    parsed_dates = sorted(
+        {parsed for value in values if (parsed := parse_date_only(value)) is not None},
+        reverse=True,
+    )
+    years = sorted({str(value.year) for value in parsed_dates}, reverse=True)
+    months_by_year: dict[str, list[str]] = {}
+    days_by_year_month: dict[tuple[str, str], list[str]] = {}
+    for parsed in parsed_dates:
+        year = str(parsed.year)
+        month = f"{parsed.month:02d}"
+        day = f"{parsed.day:02d}"
+        months_by_year.setdefault(year, [])
+        if month not in months_by_year[year]:
+            months_by_year[year].append(month)
+        days_by_year_month.setdefault((year, month), [])
+        if day not in days_by_year_month[(year, month)]:
+            days_by_year_month[(year, month)].append(day)
+    return ["전체", *years], months_by_year, days_by_year_month
+
+
+def apply_year_month_day_filter(df: pd.DataFrame, column: str, prefix: str, cols) -> pd.DataFrame:
+    years, months_by_year, days_by_year_month = build_year_month_day_options(df[column].tolist())
+    selected_year = cols[0].selectbox("년", years, key=f"{prefix}_year_filter")
+    month_options = ["전체"]
+    if selected_year != "전체":
+        month_options.extend(months_by_year.get(selected_year, []))
+    selected_month = cols[1].selectbox("월", month_options, key=f"{prefix}_month_filter")
+    day_options = ["전체"]
+    if selected_year != "전체" and selected_month != "전체":
+        day_options.extend(days_by_year_month.get((selected_year, selected_month), []))
+    selected_day = cols[2].selectbox("일", day_options, key=f"{prefix}_day_filter")
+
+    def matches(value: Any) -> bool:
+        parsed = parse_date_only(value)
+        if parsed is None:
+            return False
+        if selected_year != "전체" and str(parsed.year) != selected_year:
+            return False
+        if selected_month != "전체" and f"{parsed.month:02d}" != selected_month:
+            return False
+        if selected_day != "전체" and f"{parsed.day:02d}" != selected_day:
+            return False
+        return True
+
+    return df[df[column].apply(matches)]
 
 
 def expand_history_rows_by_blade(history_df: pd.DataFrame) -> pd.DataFrame:
@@ -1553,11 +1601,11 @@ def main() -> None:
         if st.button("사용률 리셋", use_container_width=True):
             reset_all_usage_data()
             st.rerun()
-        if st.button("최근 반영 결과 리셋", use_container_width=True):
-            reset_last_sheet_sync_result()
-            st.rerun()
-        if st.button("반영 이력 리셋", use_container_width=True):
+        if st.button("데이터 반영 이력 리셋", use_container_width=True):
             reset_sheet_sync_history_data()
+            st.rerun()
+        if st.button("교체완료 시점 리셋", use_container_width=True):
+            reset_completion_history_data()
             st.rerun()
 
     if st.session_state.send_result:
@@ -1616,7 +1664,6 @@ def main() -> None:
         st.caption("데이터 반영 이력")
         if st.session_state.sheet_sync_history:
             history_df = pd.DataFrame(st.session_state.sheet_sync_history)
-            history_date_options = build_date_filter_options(history_df["반영시각"].tolist())
             ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
             history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
             history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
@@ -1627,19 +1674,15 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 history_df = history_df[history_df["설비"] == active_machine_filter]
-            history_filter_cols = st.columns(3)
-            selected_history_date = history_filter_cols[0].selectbox("날짜", history_date_options, key="history_date_filter")
-            if selected_history_date != "전체":
-                history_df = history_df[
-                    history_df["반영시각"].apply(lambda value: (parsed := parse_date_only(value)) is not None and parsed.isoformat() == selected_history_date)
-                ]
+            history_filter_cols = st.columns(5)
+            history_df = apply_year_month_day_filter(history_df, "반영시각", "history", history_filter_cols[:3])
             history_df = expand_history_rows_by_blade(history_df)
             machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
-            selected_history_machine = history_filter_cols[1].selectbox("설비", machine_options, key="history_machine_filter")
+            selected_history_machine = history_filter_cols[3].selectbox("설비", machine_options, key="history_machine_filter")
             if selected_history_machine != "전체":
                 history_df = history_df[history_df["설비"] == selected_history_machine]
             blade_options = ["전체", *sorted([value for value in history_df["날물명"].dropna().astype(str).unique() if value.strip()])]
-            selected_history_blade = history_filter_cols[2].selectbox("날물명", blade_options, key="history_blade_filter")
+            selected_history_blade = history_filter_cols[4].selectbox("날물명", blade_options, key="history_blade_filter")
             if selected_history_blade != "전체":
                 history_df = history_df[history_df["날물명"] == selected_history_blade]
             history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
@@ -1666,7 +1709,6 @@ def main() -> None:
         st.caption("교체완료 시점")
         if st.session_state.get("completion_history"):
             completion_df = pd.DataFrame(st.session_state.get("completion_history", []))
-            completion_date_options = build_date_filter_options(completion_df["교체완료시각"].tolist())
             ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량"]
             completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
             if "교체 시점 사용량" in completion_df.columns:
@@ -1678,18 +1720,14 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 completion_df = completion_df[completion_df["설비"] == active_machine_filter]
-            completion_filter_cols = st.columns(3)
-            selected_completion_date = completion_filter_cols[0].selectbox("날짜", completion_date_options, key="completion_date_filter")
-            if selected_completion_date != "전체":
-                completion_df = completion_df[
-                    completion_df["교체완료시각"].apply(lambda value: (parsed := parse_date_only(value)) is not None and parsed.isoformat() == selected_completion_date)
-                ]
+            completion_filter_cols = st.columns(5)
+            completion_df = apply_year_month_day_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[:3])
             completion_machine_options = ["전체", *sorted([value for value in completion_df["설비"].dropna().astype(str).unique() if value.strip()])]
-            selected_completion_machine = completion_filter_cols[1].selectbox("설비", completion_machine_options, key="completion_machine_filter")
+            selected_completion_machine = completion_filter_cols[3].selectbox("설비", completion_machine_options, key="completion_machine_filter")
             if selected_completion_machine != "전체":
                 completion_df = completion_df[completion_df["설비"] == selected_completion_machine]
             completion_blade_options = ["전체", *sorted([value for value in completion_df["날물명"].dropna().astype(str).unique() if value.strip()])]
-            selected_completion_blade = completion_filter_cols[2].selectbox("날물명", completion_blade_options, key="completion_blade_filter")
+            selected_completion_blade = completion_filter_cols[4].selectbox("날물명", completion_blade_options, key="completion_blade_filter")
             if selected_completion_blade != "전체":
                 completion_df = completion_df[completion_df["날물명"] == selected_completion_blade]
             if not completion_df.empty:

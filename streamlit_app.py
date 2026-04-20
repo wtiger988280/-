@@ -874,29 +874,45 @@ def build_year_month_day_options(values: list[Any]) -> tuple[list[str], dict[str
     return ["전체", *years], months_by_year, days_by_year_month
 
 
-def apply_year_month_day_filter(df: pd.DataFrame, column: str, prefix: str, cols) -> pd.DataFrame:
-    years, months_by_year, days_by_year_month = build_year_month_day_options(df[column].tolist())
-    selected_year = cols[0].selectbox("년", years, key=f"{prefix}_year_filter", label_visibility="collapsed")
-    month_options = ["전체"]
-    if selected_year != "전체":
-        month_options.extend(months_by_year.get(selected_year, []))
-    selected_month = cols[1].selectbox("월", month_options, key=f"{prefix}_month_filter", label_visibility="collapsed")
-    day_options = ["전체"]
-    if selected_year != "전체" and selected_month != "전체":
-        day_options.extend(days_by_year_month.get((selected_year, selected_month), []))
-    selected_day = cols[2].selectbox("일", day_options, key=f"{prefix}_day_filter", label_visibility="collapsed")
+def build_single_date_dropdown_options(values: list[Any]) -> list[str]:
+    parsed_dates = sorted(
+        {parsed for value in values if (parsed := parse_date_only(value)) is not None},
+        reverse=True,
+    )
+    options = ["전체"]
+    years_seen: set[str] = set()
+    months_seen: set[str] = set()
+    for parsed in parsed_dates:
+        year = f"{parsed.year}"
+        month = f"{parsed.year}-{parsed.month:02d}"
+        day = parsed.isoformat()
+        if year not in years_seen:
+            options.append(f"년: {year}")
+            years_seen.add(year)
+        if month not in months_seen:
+            options.append(f"월: {month}")
+            months_seen.add(month)
+        options.append(f"일: {day}")
+    return options
+
+
+def apply_single_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, container) -> pd.DataFrame:
+    options = build_single_date_dropdown_options(df[column].tolist())
+    selected = container.selectbox("날짜", options, key=f"{prefix}_date_filter")
+    if selected == "전체":
+        return df
+
+    scope, raw_value = selected.split(": ", 1)
 
     def matches(value: Any) -> bool:
         parsed = parse_date_only(value)
         if parsed is None:
             return False
-        if selected_year != "전체" and str(parsed.year) != selected_year:
-            return False
-        if selected_month != "전체" and f"{parsed.month:02d}" != selected_month:
-            return False
-        if selected_day != "전체" and f"{parsed.day:02d}" != selected_day:
-            return False
-        return True
+        if scope == "년":
+            return f"{parsed.year}" == raw_value
+        if scope == "월":
+            return f"{parsed.year}-{parsed.month:02d}" == raw_value
+        return parsed.isoformat() == raw_value
 
     return df[df[column].apply(matches)]
 
@@ -1674,10 +1690,8 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 history_df = history_df[history_df["설비"] == active_machine_filter]
-            history_filter_cols = st.columns([2.2, 1, 1])
-            history_filter_cols[0].caption("날짜")
-            history_date_cols = history_filter_cols[0].columns(3)
-            history_df = apply_year_month_day_filter(history_df, "반영시각", "history", history_date_cols)
+            history_filter_cols = st.columns([1.3, 1, 1])
+            history_df = apply_single_date_dropdown_filter(history_df, "반영시각", "history", history_filter_cols[0])
             history_df = expand_history_rows_by_blade(history_df)
             machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_history_machine = history_filter_cols[1].selectbox("설비", machine_options, key="history_machine_filter")
@@ -1722,10 +1736,8 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 completion_df = completion_df[completion_df["설비"] == active_machine_filter]
-            completion_filter_cols = st.columns([2.2, 1, 1])
-            completion_filter_cols[0].caption("날짜")
-            completion_date_cols = completion_filter_cols[0].columns(3)
-            completion_df = apply_year_month_day_filter(completion_df, "교체완료시각", "completion", completion_date_cols)
+            completion_filter_cols = st.columns([1.3, 1, 1])
+            completion_df = apply_single_date_dropdown_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[0])
             completion_machine_options = ["전체", *sorted([value for value in completion_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_completion_machine = completion_filter_cols[1].selectbox("설비", completion_machine_options, key="completion_machine_filter")
             if selected_completion_machine != "전체":

@@ -1624,10 +1624,19 @@ def main() -> None:
             selected_history_blade = history_filter_cols[2].selectbox("날물명", blade_options, key="history_blade_filter")
             if selected_history_blade != "전체":
                 history_df = history_df[history_df["날물명"] == selected_history_blade]
+            history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
+            dedupe_columns = [column for column in ["설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"] if column in history_df.columns]
+            if dedupe_columns:
+                history_df = (
+                    history_df
+                    .sort_values(by="_sort_time", ascending=False, na_position="last")
+                    .drop_duplicates(subset=dedupe_columns, keep="first")
+                    .sort_values(by="_sort_time", ascending=False, na_position="last")
+                )
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
                 if column in history_df.columns:
                     history_df[column] = history_df[column].where(history_df[column].notna(), "")
-            history_df = history_df.drop(columns=["_line"], errors="ignore")
+            history_df = history_df.drop(columns=["_line", "_sort_time"], errors="ignore")
             if not history_df.empty:
                 st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
             else:

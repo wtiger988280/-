@@ -874,58 +874,29 @@ def build_year_month_day_options(values: list[Any]) -> tuple[list[str], dict[str
     return ["전체", *years], months_by_year, days_by_year_month
 
 
-def apply_date_popover_filter(df: pd.DataFrame, column: str, prefix: str, container) -> pd.DataFrame:
+def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, container) -> pd.DataFrame:
     years, months_by_year, days_by_year_month = build_year_month_day_options(df[column].tolist())
-    selected_year = st.session_state.get(f"{prefix}_year_filter", "전체")
-    if selected_year not in years:
-        selected_year = "전체"
-        st.session_state[f"{prefix}_year_filter"] = "전체"
+    options = ["전체"]
+    for year in years[1:]:
+        options.append(f"년 | {year}")
+        for month in months_by_year.get(year, []):
+            options.append(f"월 | {year}-{month}")
+            for day in days_by_year_month.get((year, month), []):
+                options.append(f"일 | {year}-{month}-{day}")
 
-    month_options = ["전체"]
-    if selected_year != "전체":
-        month_options.extend(months_by_year.get(selected_year, []))
-    selected_month = st.session_state.get(f"{prefix}_month_filter", "전체")
-    if selected_month not in month_options:
-        selected_month = "전체"
-        st.session_state[f"{prefix}_month_filter"] = "전체"
+    selected = container.selectbox("날짜", options, key=f"{prefix}_date_filter")
 
-    day_options = ["전체"]
-    if selected_year != "전체" and selected_month != "전체":
-        day_options.extend(days_by_year_month.get((selected_year, selected_month), []))
-    selected_day = st.session_state.get(f"{prefix}_day_filter", "전체")
-    if selected_day not in day_options:
-        selected_day = "전체"
-        st.session_state[f"{prefix}_day_filter"] = "전체"
-
-    summary = "전체"
-    if selected_year != "전체":
-        summary = f"{selected_year}년"
-    if selected_month != "전체":
-        summary = f"{selected_year}-{selected_month}"
-    if selected_day != "전체":
-        summary = f"{selected_year}-{selected_month}-{selected_day}"
-
-    container.caption("날짜")
-    with container.popover(summary, use_container_width=True):
-        selected_year = st.selectbox("년", years, index=years.index(selected_year), key=f"{prefix}_year_filter")
-        month_options = ["전체"]
-        if selected_year != "전체":
-            month_options.extend(months_by_year.get(selected_year, []))
-        selected_month = st.selectbox(
-            "월",
-            month_options,
-            index=month_options.index(st.session_state.get(f"{prefix}_month_filter", "전체")) if st.session_state.get(f"{prefix}_month_filter", "전체") in month_options else 0,
-            key=f"{prefix}_month_filter",
-        )
-        day_options = ["전체"]
-        if selected_year != "전체" and selected_month != "전체":
-            day_options.extend(days_by_year_month.get((selected_year, selected_month), []))
-        selected_day = st.selectbox(
-            "일",
-            day_options,
-            index=day_options.index(st.session_state.get(f"{prefix}_day_filter", "전체")) if st.session_state.get(f"{prefix}_day_filter", "전체") in day_options else 0,
-            key=f"{prefix}_day_filter",
-        )
+    if selected == "전체":
+        selected_year = selected_month = selected_day = "전체"
+    else:
+        scope, raw = selected.split(" | ", 1)
+        if scope == "년":
+            selected_year, selected_month, selected_day = raw, "전체", "전체"
+        elif scope == "월":
+            selected_year, selected_month = raw.split("-")
+            selected_day = "전체"
+        else:
+            selected_year, selected_month, selected_day = raw.split("-")
 
     def matches(value: Any) -> bool:
         parsed = parse_date_only(value)
@@ -1581,40 +1552,6 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stPopover"] > button {
-            width: 100% !important;
-            min-height: 38px !important;
-            background: rgb(241, 245, 249) !important;
-            color: #0f172a !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 0.5rem !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            text-align: left !important;
-            box-shadow: none !important;
-            padding: 0.375rem 0.75rem !important;
-        }
-        div[data-testid="stPopover"] > button:hover {
-            background: rgb(241, 245, 249) !important;
-            border: 1px solid #cbd5e1 !important;
-        }
-        div[data-testid="stPopover"] > button p {
-            margin: 0 !important;
-            text-align: left !important;
-            flex: 1 1 auto !important;
-        }
-        div[data-testid="stPopover"] > button svg {
-            flex: 0 0 auto !important;
-            margin-left: 0.5rem !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
     latest_info = refresh_auto_sheet_target()
     auto_sheet_url = st.session_state.auto_sheet_url
     auto_sheet_name = st.session_state.auto_sheet_name
@@ -1750,7 +1687,7 @@ def main() -> None:
             if active_line_filter != "all" and active_machine_filter != "전체":
                 history_df = history_df[history_df["설비"] == active_machine_filter]
             history_filter_cols = st.columns([1.15, 1, 1])
-            history_df = apply_date_popover_filter(history_df, "반영시각", "history", history_filter_cols[0])
+            history_df = apply_date_dropdown_filter(history_df, "반영시각", "history", history_filter_cols[0])
             history_df = expand_history_rows_by_blade(history_df)
             machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_history_machine = history_filter_cols[1].selectbox("설비", machine_options, key="history_machine_filter")
@@ -1796,7 +1733,7 @@ def main() -> None:
             if active_line_filter != "all" and active_machine_filter != "전체":
                 completion_df = completion_df[completion_df["설비"] == active_machine_filter]
             completion_filter_cols = st.columns([1.15, 1, 1])
-            completion_df = apply_date_popover_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[0])
+            completion_df = apply_date_dropdown_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[0])
             completion_machine_options = ["전체", *sorted([value for value in completion_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_completion_machine = completion_filter_cols[1].selectbox("설비", completion_machine_options, key="completion_machine_filter")
             if selected_completion_machine != "전체":

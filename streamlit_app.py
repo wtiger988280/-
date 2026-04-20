@@ -351,15 +351,18 @@ def format_cycle_value(row: dict[str, Any], value: float) -> str:
 
 
 def get_display_blade_name(row: dict[str, Any]) -> str:
-    if row["line"] == "엣지":
+    edge = "엣지"
+    gwantong = "(관통)"
+    nalmul = " 날물"
+    if row["line"] == edge:
         blade_name = str(row.get("bladeName", "")).strip()
         if blade_name:
             return blade_name
         return "AT 날물(후면)"
-    if "(관통)" in row["bladeName"]:
+    if gwantong in row["bladeName"]:
         return row["bladeName"]
     if any(token in row["bladeName"] for token in ["Φ5", "Φ8", "Φ12"]):
-        return row["bladeName"].replace(" 날물", "") + "(관통) 날물"
+        return row["bladeName"].replace(nalmul, "") + gwantong + nalmul
     return row["bladeName"]
 
 
@@ -376,21 +379,21 @@ def get_machine_blade_summary(machine: str, rows: list[dict[str, Any]] | None = 
 
 
 def get_history_blade_list(machine: str, rows: list[dict[str, Any]] | None = None) -> list[str]:
-    source_rows = rows if rows is not None else st.session_state.get("equipment_data", INITIAL_RAW_DATA)
-    machine_rows = [row for row in source_rows if str(row.get("machine", "")).strip() == machine]
-    preferred_order = [
-        "?15 ??",
-        "?20 ??",
-        "?12(??) ??",
-        "?8(??) ??",
-        "?5(??) ??",
-        "?35 ??",
-    ]
-    available = []
-    for label in preferred_order:
-        if any(get_display_blade_name(row) == label for row in machine_rows):
-            available.append(label)
-    return available
+    normalized_machine = normalize_machine_name(machine)
+    if normalized_machine.startswith(("수직", "양면", "포인트", "런닝")):
+        return [
+            "Φ35 날물",
+            "Φ20 날물",
+            "Φ12(관통) 날물",
+            "Φ8(관통) 날물",
+            "Φ15 날물",
+            "Φ5(관통) 날물",
+        ]
+    if normalized_machine == "엣지 #6":
+        return ["AT 날물(전면)", "AT 날물(후면)"]
+    if normalized_machine.startswith("엣지"):
+        return ["AT 날물(후면)"]
+    return []
 
 
 def normalize_edge_blade_name(machine: str, blade_name: Any) -> str:

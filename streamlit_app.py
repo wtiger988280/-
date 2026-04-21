@@ -104,20 +104,13 @@ def normalize_display_timestamp(value: Any) -> str:
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
         try:
             parsed = datetime.strptime(raw, fmt)
-            if parsed.hour <= 3:
-                parsed = parsed.replace(tzinfo=ZoneInfo("UTC")).astimezone(KST)
-            else:
-                parsed = parsed.replace(tzinfo=KST)
             return parsed.strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
     try:
         parsed_iso = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         if parsed_iso.tzinfo is None:
-            if parsed_iso.hour <= 3:
-                parsed_iso = parsed_iso.replace(tzinfo=ZoneInfo("UTC"))
-            else:
-                parsed_iso = parsed_iso.replace(tzinfo=KST)
+            return parsed_iso.strftime("%Y-%m-%d %H:%M:%S")
         return parsed_iso.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
     except ValueError:
         return raw
@@ -923,7 +916,14 @@ def expand_history_rows_by_blade(history_df: pd.DataFrame) -> pd.DataFrame:
         machine = str(row_dict.get("설비", "")).strip()
         blade_name = str(row_dict.get("날물명", "")).strip()
         if blade_name:
-            expanded_rows.append(row_dict)
+            blade_parts = [part.strip() for part in blade_name.split(",") if part.strip()]
+            if blade_parts:
+                for blade in blade_parts:
+                    copied = dict(row_dict)
+                    copied["날물명"] = blade
+                    expanded_rows.append(copied)
+            else:
+                expanded_rows.append(row_dict)
             continue
         blade_list = get_history_blade_list(machine)
         if blade_list:

@@ -941,7 +941,10 @@ def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, conta
         selected_display = "전체"
 
     with container:
-        st.markdown("##### 날짜")
+        st.markdown(
+            "<div style='font-size: 0.875rem; font-weight: 400; color: rgb(17, 24, 39); margin-bottom: 0.25rem;'>날짜</div>",
+            unsafe_allow_html=True,
+        )
         with st.popover(selected_display, use_container_width=True):
             date_cols = st.columns(3)
             selected_year = date_cols[0].selectbox("년", years, key=f"{prefix}_year_filter")
@@ -1860,7 +1863,7 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 history_df = history_df[history_df["설비"] == active_machine_filter]
-            history_filter_cols = st.columns([1.15, 1, 1])
+            history_filter_cols = st.columns(3)
             history_df = apply_date_dropdown_filter(history_df, "반영시각", "history", history_filter_cols[0])
             history_df = expand_history_rows_by_blade(history_df)
             machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
@@ -1910,7 +1913,7 @@ def main() -> None:
             ]
             if active_line_filter != "all" and active_machine_filter != "전체":
                 completion_df = completion_df[completion_df["설비"] == active_machine_filter]
-            completion_filter_cols = st.columns([1.15, 1, 1])
+            completion_filter_cols = st.columns(3)
             completion_df = apply_date_dropdown_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[0])
             completion_machine_options = ["전체", *sorted([value for value in completion_df["설비"].dropna().astype(str).unique() if value.strip()])]
             selected_completion_machine = completion_filter_cols[1].selectbox("설비", completion_machine_options, key="completion_machine_filter")

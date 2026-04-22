@@ -24,40 +24,62 @@ def inject_filter_styles() -> None:
         div[data-testid="stPopover"] > button,
         div[data-testid="stPopover"] button[kind="secondary"] {
             width: 100%;
-            min-height: 2.25rem;
+            min-height: 2.15rem;
+            height: 2.15rem;
             border: 1px solid rgb(229, 231, 235) !important;
             border-radius: 0.5rem;
-            background: rgb(243, 244, 246) !important;
-            background-color: rgb(243, 244, 246) !important;
+            background: rgb(249, 250, 251) !important;
+            background-color: rgb(249, 250, 251) !important;
             color: rgb(17, 24, 39) !important;
-            padding: 0.375rem 0.875rem;
-            text-align: left;
+            padding: 0.25rem 0.75rem !important;
+            text-align: left !important;
             justify-content: space-between !important;
             align-items: center !important;
             box-shadow: none !important;
         }
-        div[data-testid="stPopover"] > button > div:first-child,
-        div[data-testid="stPopover"] button[kind="secondary"] > div:first-child {
-            flex: 1 1 auto !important;
-            text-align: left !important;
-        }
-        div[data-testid="stPopover"] > button svg,
-        div[data-testid="stPopover"] button[kind="secondary"] svg {
-            margin-left: auto !important;
-            flex: 0 0 auto !important;
-        }
         div[data-testid="stPopover"] > button:hover,
         div[data-testid="stPopover"] button[kind="secondary"]:hover {
-            background: rgb(243, 244, 246) !important;
-            background-color: rgb(243, 244, 246) !important;
+            background: rgb(249, 250, 251) !important;
+            background-color: rgb(249, 250, 251) !important;
             border-color: rgb(209, 213, 219) !important;
             color: rgb(17, 24, 39) !important;
+        }
+        div[data-testid="stPopover"] > button > div,
+        div[data-testid="stPopover"] button[kind="secondary"] > div {
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 0.5rem !important;
+            text-align: left !important;
+            background: transparent !important;
+            background-color: transparent !important;
+        }
+        div[data-testid="stPopover"] > button > div > div:first-child,
+        div[data-testid="stPopover"] button[kind="secondary"] > div > div:first-child {
+            flex: 1 1 auto !important;
+            text-align: left !important;
+            justify-content: flex-start !important;
+            background: transparent !important;
+            background-color: transparent !important;
         }
         div[data-testid="stPopover"] > button p,
         div[data-testid="stPopover"] button[kind="secondary"] p {
             margin: 0 !important;
             color: rgb(17, 24, 39) !important;
-            font-weight: 400;
+            font-weight: 400 !important;
+            text-align: left !important;
+            width: auto !important;
+            background: transparent !important;
+            background-color: transparent !important;
+        }
+        div[data-testid="stPopover"] > button svg,
+        div[data-testid="stPopover"] button[kind="secondary"] svg {
+            margin-left: auto !important;
+            flex: 0 0 auto !important;
+            align-self: center !important;
+            background: transparent !important;
+            background-color: transparent !important;
         }
         </style>
         """,

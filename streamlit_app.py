@@ -21,26 +21,31 @@ def inject_filter_styles() -> None:
     st.markdown(
         """
         <style>
-        div[data-testid="stPopover"] > button {
+        div[data-testid="stPopover"] > button,
+        div[data-testid="stPopover"] button[kind="secondary"] {
             width: 100%;
             min-height: 2.5rem;
-            border: 1px solid rgb(229, 231, 235);
+            border: 1px solid rgb(229, 231, 235) !important;
             border-radius: 0.5rem;
-            background: rgb(243, 244, 246);
-            color: rgb(17, 24, 39);
+            background: rgb(243, 244, 246) !important;
+            background-color: rgb(243, 244, 246) !important;
+            color: rgb(17, 24, 39) !important;
             padding: 0.5rem 0.875rem;
             text-align: left;
-            justify-content: space-between;
-            box-shadow: none;
+            justify-content: space-between !important;
+            box-shadow: none !important;
         }
-        div[data-testid="stPopover"] > button:hover {
-            background: rgb(243, 244, 246);
-            border-color: rgb(209, 213, 219);
-            color: rgb(17, 24, 39);
+        div[data-testid="stPopover"] > button:hover,
+        div[data-testid="stPopover"] button[kind="secondary"]:hover {
+            background: rgb(243, 244, 246) !important;
+            background-color: rgb(243, 244, 246) !important;
+            border-color: rgb(209, 213, 219) !important;
+            color: rgb(17, 24, 39) !important;
         }
-        div[data-testid="stPopover"] > button p {
-            margin: 0;
-            color: rgb(17, 24, 39);
+        div[data-testid="stPopover"] > button p,
+        div[data-testid="stPopover"] button[kind="secondary"] p {
+            margin: 0 !important;
+            color: rgb(17, 24, 39) !important;
             font-weight: 400;
         }
         </style>

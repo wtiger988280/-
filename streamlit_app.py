@@ -890,42 +890,22 @@ def build_year_month_day_options(values: list[Any]) -> tuple[list[str], dict[str
 
 
 def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, container) -> pd.DataFrame:
-    years, months_by_year, days_by_year_month = build_year_month_day_options(df[column].tolist())
-    options = ["전체"]
-    for year in years[1:]:
-        options.append(f"년 | {year}")
-        for month in [f"{value:02d}" for value in range(1, 13)]:
-            options.append(f"월 | {year}-{month}")
-            for day in [f"{value:02d}" for value in range(1, 32)]:
-                options.append(f"일 | {year}-{month}-{day}")
+    parsed_dates = [parsed for parsed in (parse_date_only(value) for value in df[column].tolist()) if parsed is not None]
+    if not parsed_dates:
+        container.date_input("날짜", value=None, key=f"{prefix}_date_filter", format="YYYY-MM-DD")
+        return df
 
-    selected = container.selectbox("날짜", options, key=f"{prefix}_date_filter")
-
-    if selected == "전체":
-        normalized_year = normalized_month = normalized_day = "전체"
-    else:
-        scope, raw = selected.split(" | ", 1)
-        if scope == "년":
-            normalized_year, normalized_month, normalized_day = raw, "전체", "전체"
-        elif scope == "월":
-            normalized_year, normalized_month = raw.split("-")
-            normalized_day = "전체"
-        else:
-            normalized_year, normalized_month, normalized_day = raw.split("-")
-
-    def matches(value: Any) -> bool:
-        parsed = parse_date_only(value)
-        if parsed is None:
-            return False
-        if normalized_year != "전체" and str(parsed.year) != normalized_year:
-            return False
-        if normalized_month != "전체" and f"{parsed.month:02d}" != normalized_month:
-            return False
-        if normalized_day != "전체" and f"{parsed.day:02d}" != normalized_day:
-            return False
-        return True
-
-    return df[df[column].apply(matches)]
+    selected_date = container.date_input(
+        "날짜",
+        value=None,
+        min_value=min(parsed_dates),
+        max_value=max(parsed_dates),
+        key=f"{prefix}_date_filter",
+        format="YYYY-MM-DD",
+    )
+    if selected_date is None:
+        return df
+    return df[df[column].apply(lambda value: parse_date_only(value) == selected_date)]
 
 
 def expand_history_rows_by_blade(history_df: pd.DataFrame) -> pd.DataFrame:

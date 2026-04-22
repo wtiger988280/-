@@ -957,8 +957,9 @@ def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
     if "반영 사용량(회)" in normalized_df.columns:
         aggregation_map["반영 사용량(회)"] = "sum"
     if "데이터 기준일자" in normalized_df.columns:
-        aggregation_map["데이터 기준일자"] = lambda values: ", ".join(
-            sorted({str(value).strip() for value in values if str(value).strip() and str(value).strip().lower() != "nan"})
+        aggregation_map["데이터 기준일자"] = lambda values: min(
+            [str(value).strip() for value in values if str(value).strip() and str(value).strip().lower() != "nan"],
+            default="",
         )
 
     if not aggregation_map:

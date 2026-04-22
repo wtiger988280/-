@@ -898,8 +898,6 @@ def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, conta
     selected_date = container.date_input(
         "날짜",
         value=None,
-        min_value=min(parsed_dates),
-        max_value=max(parsed_dates),
         key=f"{prefix}_date_filter",
         format="YYYY-MM-DD",
     )

@@ -24,16 +24,27 @@ def inject_filter_styles() -> None:
         div[data-testid="stPopover"] > button,
         div[data-testid="stPopover"] button[kind="secondary"] {
             width: 100%;
-            min-height: 2.5rem;
+            min-height: 2.25rem;
             border: 1px solid rgb(229, 231, 235) !important;
             border-radius: 0.5rem;
             background: rgb(243, 244, 246) !important;
             background-color: rgb(243, 244, 246) !important;
             color: rgb(17, 24, 39) !important;
-            padding: 0.5rem 0.875rem;
+            padding: 0.375rem 0.875rem;
             text-align: left;
             justify-content: space-between !important;
+            align-items: center !important;
             box-shadow: none !important;
+        }
+        div[data-testid="stPopover"] > button > div:first-child,
+        div[data-testid="stPopover"] button[kind="secondary"] > div:first-child {
+            flex: 1 1 auto !important;
+            text-align: left !important;
+        }
+        div[data-testid="stPopover"] > button svg,
+        div[data-testid="stPopover"] button[kind="secondary"] svg {
+            margin-left: auto !important;
+            flex: 0 0 auto !important;
         }
         div[data-testid="stPopover"] > button:hover,
         div[data-testid="stPopover"] button[kind="secondary"]:hover {

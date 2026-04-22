@@ -16,6 +16,38 @@ import streamlit as st
 
 st.set_page_config(page_title="날물 교체관리 대시보드", layout="wide")
 
+
+def inject_filter_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stPopover"] > button {
+            width: 100%;
+            min-height: 2.5rem;
+            border: 1px solid rgb(229, 231, 235);
+            border-radius: 0.5rem;
+            background: rgb(243, 244, 246);
+            color: rgb(17, 24, 39);
+            padding: 0.5rem 0.875rem;
+            text-align: left;
+            justify-content: space-between;
+            box-shadow: none;
+        }
+        div[data-testid="stPopover"] > button:hover {
+            background: rgb(243, 244, 246);
+            border-color: rgb(209, 213, 219);
+            color: rgb(17, 24, 39);
+        }
+        div[data-testid="stPopover"] > button p {
+            margin: 0;
+            color: rgb(17, 24, 39);
+            font-weight: 400;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 TEAMS_DEFAULT_WEBHOOK = "https://defaulte2d70a05f3524e9d8c182194f1d9ef.31.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/98f10010be974d57a6f4065239b83ca4/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=tVbGSnsTMHbildXcbLsoBQj_WXrvSSOLnqktQNSDFBM"
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KmsdyvfHJEOXnZvGtUl1TEhWz0JzJ3NWkg3Amb8l91U/edit"
 WORK_DIR = Path(__file__).resolve().parent
@@ -1687,6 +1719,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
+    inject_filter_styles()
     latest_info = refresh_auto_sheet_target()
     auto_sheet_url = st.session_state.auto_sheet_url
     auto_sheet_name = st.session_state.auto_sheet_name

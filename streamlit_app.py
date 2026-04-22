@@ -17,75 +17,6 @@ import streamlit as st
 st.set_page_config(page_title="날물 교체관리 대시보드", layout="wide")
 
 
-def inject_filter_styles() -> None:
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stPopover"] > button,
-        div[data-testid="stPopover"] button[kind="secondary"] {
-            width: 100%;
-            min-height: 2.15rem;
-            height: 2.15rem;
-            border: 1px solid rgb(229, 231, 235) !important;
-            border-radius: 0.5rem;
-            background: rgb(249, 250, 251) !important;
-            background-color: rgb(249, 250, 251) !important;
-            color: rgb(17, 24, 39) !important;
-            padding: 0.25rem 0.75rem !important;
-            text-align: left !important;
-            justify-content: space-between !important;
-            align-items: center !important;
-            box-shadow: none !important;
-        }
-        div[data-testid="stPopover"] > button:hover,
-        div[data-testid="stPopover"] button[kind="secondary"]:hover {
-            background: rgb(249, 250, 251) !important;
-            background-color: rgb(249, 250, 251) !important;
-            border-color: rgb(209, 213, 219) !important;
-            color: rgb(17, 24, 39) !important;
-        }
-        div[data-testid="stPopover"] > button > div,
-        div[data-testid="stPopover"] button[kind="secondary"] > div {
-            width: 100% !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            gap: 0.5rem !important;
-            text-align: left !important;
-            background: transparent !important;
-            background-color: transparent !important;
-        }
-        div[data-testid="stPopover"] > button > div > div:first-child,
-        div[data-testid="stPopover"] button[kind="secondary"] > div > div:first-child {
-            flex: 1 1 auto !important;
-            text-align: left !important;
-            justify-content: flex-start !important;
-            background: transparent !important;
-            background-color: transparent !important;
-        }
-        div[data-testid="stPopover"] > button p,
-        div[data-testid="stPopover"] button[kind="secondary"] p {
-            margin: 0 !important;
-            color: rgb(17, 24, 39) !important;
-            font-weight: 400 !important;
-            text-align: left !important;
-            width: auto !important;
-            background: transparent !important;
-            background-color: transparent !important;
-        }
-        div[data-testid="stPopover"] > button svg,
-        div[data-testid="stPopover"] button[kind="secondary"] svg {
-            margin-left: auto !important;
-            flex: 0 0 auto !important;
-            align-self: center !important;
-            background: transparent !important;
-            background-color: transparent !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
 TEAMS_DEFAULT_WEBHOOK = "https://defaulte2d70a05f3524e9d8c182194f1d9ef.31.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/98f10010be974d57a6f4065239b83ca4/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=tVbGSnsTMHbildXcbLsoBQj_WXrvSSOLnqktQNSDFBM"
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KmsdyvfHJEOXnZvGtUl1TEhWz0JzJ3NWkg3Amb8l91U/edit"
 WORK_DIR = Path(__file__).resolve().parent
@@ -960,78 +891,27 @@ def build_year_month_day_options(values: list[Any]) -> tuple[list[str], dict[str
 
 def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, container) -> pd.DataFrame:
     years, months_by_year, days_by_year_month = build_year_month_day_options(df[column].tolist())
-    selected_year = st.session_state.get(f"{prefix}_year_filter", "전체")
-    selected_month_value = st.session_state.get(f"{prefix}_month_filter", "전체")
-    selected_day_value = st.session_state.get(f"{prefix}_day_filter", "전체")
+    options = ["전체"]
+    for year in years[1:]:
+        options.append(f"년 | {year}")
+        for month in months_by_year.get(year, []):
+            options.append(f"월 | {year}-{month}")
+            for day in days_by_year_month.get((year, month), []):
+                options.append(f"일 | {year}-{month}-{day}")
 
-    if selected_day_value != "전체":
-        selected_display = f"일 | {selected_day_value}"
-    elif selected_month_value != "전체":
-        selected_display = f"월 | {selected_month_value}"
-    elif selected_year != "전체":
-        selected_display = f"년 | {selected_year}"
+    selected = container.selectbox("날짜", options, key=f"{prefix}_date_filter")
+
+    if selected == "전체":
+        normalized_year = normalized_month = normalized_day = "전체"
     else:
-        selected_display = "전체"
-
-    with container:
-        st.markdown(
-            "<div style='font-size: 0.875rem; font-weight: 400; color: rgb(17, 24, 39); margin-bottom: 0.25rem;'>날짜</div>",
-            unsafe_allow_html=True,
-        )
-        with st.popover(selected_display, use_container_width=True):
-            date_cols = st.columns(3)
-            selected_year = date_cols[0].selectbox("년", years, key=f"{prefix}_year_filter")
-
-            month_options = ["전체"]
-            if selected_year == "전체":
-                seen_months: list[str] = []
-                for year in years[1:]:
-                    for month in months_by_year.get(year, []):
-                        label = f"{year}-{month}"
-                        if label not in seen_months:
-                            seen_months.append(label)
-                month_options.extend(seen_months)
-            else:
-                month_options.extend([f"{selected_year}-{month}" for month in months_by_year.get(selected_year, [])])
-            if selected_month_value not in month_options:
-                selected_month_value = "전체"
-            selected_month_value = date_cols[1].selectbox("월", month_options, key=f"{prefix}_month_filter")
-
-            day_options = ["전체"]
-            if selected_month_value == "전체":
-                seen_days: list[str] = []
-                if selected_year == "전체":
-                    year_candidates = years[1:]
-                else:
-                    year_candidates = [selected_year]
-                for year in year_candidates:
-                    for month in months_by_year.get(year, []):
-                        for day in days_by_year_month.get((year, month), []):
-                            label = f"{year}-{month}-{day}"
-                            if label not in seen_days:
-                                seen_days.append(label)
-                day_options.extend(seen_days)
-            else:
-                month_year, month_only = selected_month_value.split("-")
-                day_options.extend(
-                    [f"{month_year}-{month_only}-{day}" for day in days_by_year_month.get((month_year, month_only), [])]
-                )
-            if selected_day_value not in day_options:
-                selected_day_value = "전체"
-            selected_day_value = date_cols[2].selectbox("일", day_options, key=f"{prefix}_day_filter")
-
-    normalized_year = "전체" if selected_year == "전체" else selected_year
-    normalized_month = "전체"
-    normalized_day = "전체"
-
-    if selected_month_value != "전체":
-        _, normalized_month = selected_month_value.split("-")
-    if selected_day_value != "전체":
-        normalized_year, normalized_month, normalized_day = selected_day_value.split("-")
-    elif selected_year != "전체" and selected_month_value == "전체":
-        normalized_year = selected_year
-    elif selected_month_value != "전체":
-        normalized_year, normalized_month = selected_month_value.split("-")
+        scope, raw = selected.split(" | ", 1)
+        if scope == "년":
+            normalized_year, normalized_month, normalized_day = raw, "전체", "전체"
+        elif scope == "월":
+            normalized_year, normalized_month = raw.split("-")
+            normalized_day = "전체"
+        else:
+            normalized_year, normalized_month, normalized_day = raw.split("-")
 
     def matches(value: Any) -> bool:
         parsed = parse_date_only(value)
@@ -1761,7 +1641,6 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
-    inject_filter_styles()
     latest_info = refresh_auto_sheet_target()
     auto_sheet_url = st.session_state.auto_sheet_url
     auto_sheet_name = st.session_state.auto_sheet_name

@@ -528,13 +528,10 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
         if is_boring:
             target = "보링 전체"
             usage_m = ""
-            blade_name = ""
         elif is_edge:
             target = "엣지 전체"
             usage_count = ""
             blade_name = normalize_edge_blade_name(machine, blade_name)
-        if target == "보링 전체":
-            blade_name = ""
         if is_edge and not str(blade_name).strip():
             blade_name = get_machine_blade_summary(machine, INITIAL_RAW_DATA)
 
@@ -568,7 +565,6 @@ def normalize_last_sheet_sync_details(details: list[dict[str, Any]]) -> list[dic
 
         if is_boring:
             usage_m = ""
-            blade_name = ""
         elif is_edge:
             usage_count = ""
             blade_name = normalize_edge_blade_name(machine, blade_name)
@@ -1219,6 +1215,15 @@ def sync_from_google_sheet(
     df = pd.read_csv(BytesIO(response.content))
     df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
 
+    boring_blade_columns = [
+        "Φ5(관통) 날물",
+        "Φ8(관통) 날물",
+        "Φ12(관통) 날물",
+        "Φ15 날물",
+        "Φ20 날물",
+        "Φ35 날물",
+    ]
+
     usage_col = next(
         (candidate for candidate in ["엣지사용량(m)", "총엣지사용량(m)", "usage_m", "엣지사용량", "총엣지사용량"] if candidate in df.columns),
         None,
@@ -1244,11 +1249,35 @@ def sync_from_google_sheet(
         parsed_quantity = parse_numeric_value(row[quantity_col]) if quantity_col else 0.0
         usage_m = parsed_usage
         usage_count = 0.0
-        if machine.startswith(("수직", "포인트", "런닝", "양면")) and quantity_col:
-            usage_count = parsed_quantity
-            usage_m = parsed_quantity
         prod_date = row[date_col] if date_col else None
-        if not machine or usage_m <= 0:
+        if not machine:
+            continue
+        if machine.startswith(("수직", "포인트", "런닝", "양면")):
+            boring_blade_records = []
+            for blade_column in boring_blade_columns:
+                if blade_column not in df.columns:
+                    continue
+                blade_usage = parse_numeric_value(row.get(blade_column, 0))
+                if blade_usage <= 0:
+                    continue
+                boring_blade_records.append(
+                    {
+                        "machine": machine,
+                        "blade_name": blade_column,
+                        "usageM": 0.0,
+                        "usageCount": blade_usage,
+                        "prodDate": prod_date,
+                    }
+                )
+            if boring_blade_records:
+                records.extend(boring_blade_records)
+                continue
+            if quantity_col and parsed_quantity > 0:
+                usage_count = parsed_quantity
+                usage_m = parsed_quantity
+            else:
+                continue
+        elif usage_m <= 0:
             continue
         if machine == "엣지 #6":
             front_count, back_count = parse_edge_material_counts(row[material_col]) if material_col else (0, 0)

@@ -890,37 +890,65 @@ def build_year_month_day_options(values: list[Any]) -> tuple[list[str], dict[str
 
 def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, container) -> pd.DataFrame:
     years, months_by_year, days_by_year_month = build_year_month_day_options(df[column].tolist())
-    options = ["전체"]
-    for year in years[1:]:
-        options.append(f"년 | {year}")
-        for month in months_by_year.get(year, []):
-            options.append(f"월 | {year}-{month}")
-            for day in days_by_year_month.get((year, month), []):
-                options.append(f"일 | {year}-{month}-{day}")
+    date_cols = container.columns(3)
+    selected_year = date_cols[0].selectbox("날짜", years, key=f"{prefix}_year_filter")
 
-    selected = container.selectbox("날짜", options, key=f"{prefix}_date_filter")
-
-    if selected == "전체":
-        selected_year = selected_month = selected_day = "전체"
+    month_options = ["전체"]
+    if selected_year == "전체":
+        seen_months: list[str] = []
+        for year in years[1:]:
+            for month in months_by_year.get(year, []):
+                label = f"{year}-{month}"
+                if label not in seen_months:
+                    seen_months.append(label)
+        month_options.extend(seen_months)
     else:
-        scope, raw = selected.split(" | ", 1)
-        if scope == "년":
-            selected_year, selected_month, selected_day = raw, "전체", "전체"
-        elif scope == "월":
-            selected_year, selected_month = raw.split("-")
-            selected_day = "전체"
+        month_options.extend([f"{selected_year}-{month}" for month in months_by_year.get(selected_year, [])])
+    selected_month_value = date_cols[1].selectbox("월", month_options, key=f"{prefix}_month_filter")
+
+    day_options = ["전체"]
+    if selected_month_value == "전체":
+        seen_days: list[str] = []
+        if selected_year == "전체":
+            year_candidates = years[1:]
         else:
-            selected_year, selected_month, selected_day = raw.split("-")
+            year_candidates = [selected_year]
+        for year in year_candidates:
+            for month in months_by_year.get(year, []):
+                for day in days_by_year_month.get((year, month), []):
+                    label = f"{year}-{month}-{day}"
+                    if label not in seen_days:
+                        seen_days.append(label)
+        day_options.extend(seen_days)
+    else:
+        month_year, month_only = selected_month_value.split("-")
+        day_options.extend(
+            [f"{month_year}-{month_only}-{day}" for day in days_by_year_month.get((month_year, month_only), [])]
+        )
+    selected_day_value = date_cols[2].selectbox("일", day_options, key=f"{prefix}_day_filter")
+
+    normalized_year = "전체" if selected_year == "전체" else selected_year
+    normalized_month = "전체"
+    normalized_day = "전체"
+
+    if selected_month_value != "전체":
+        _, normalized_month = selected_month_value.split("-")
+    if selected_day_value != "전체":
+        normalized_year, normalized_month, normalized_day = selected_day_value.split("-")
+    elif selected_year != "전체" and selected_month_value == "전체":
+        normalized_year = selected_year
+    elif selected_month_value != "전체":
+        normalized_year, normalized_month = selected_month_value.split("-")
 
     def matches(value: Any) -> bool:
         parsed = parse_date_only(value)
         if parsed is None:
             return False
-        if selected_year != "전체" and str(parsed.year) != selected_year:
+        if normalized_year != "전체" and str(parsed.year) != normalized_year:
             return False
-        if selected_month != "전체" and f"{parsed.month:02d}" != selected_month:
+        if normalized_month != "전체" and f"{parsed.month:02d}" != normalized_month:
             return False
-        if selected_day != "전체" and f"{parsed.day:02d}" != selected_day:
+        if normalized_day != "전체" and f"{parsed.day:02d}" != normalized_day:
             return False
         return True
 

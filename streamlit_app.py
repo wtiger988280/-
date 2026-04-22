@@ -26,6 +26,7 @@ SHEET_SYNC_HISTORY_PATH = LOG_DIR / "sheet_sync_history.json"
 COMPLETION_HISTORY_PATH = LOG_DIR / "completion_history.json"
 DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
 UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
+SYNC_HISTORY_WORKSHEET_NAME = "DASHBOARD_SYNC_HISTORY"
 KST = ZoneInfo("Asia/Seoul")
 
 
@@ -473,6 +474,9 @@ def load_latest_upload_info_from_sheet() -> dict[str, str]:
 
 
 def load_sheet_sync_history() -> list[dict[str, Any]]:
+    remote_history = load_sheet_sync_history_from_sheet()
+    if remote_history:
+        return remote_history
     if not SHEET_SYNC_HISTORY_PATH.exists():
         return []
     try:
@@ -483,6 +487,23 @@ def load_sheet_sync_history() -> list[dict[str, Any]]:
         if normalized != data:
             save_sheet_sync_history(normalized)
         return normalized
+    except Exception:
+        return []
+
+
+def load_sheet_sync_history_from_sheet() -> list[dict[str, Any]]:
+    try:
+        csv_url = to_google_sheet_csv_url(DEFAULT_GOOGLE_SHEET_URL, worksheet_name=SYNC_HISTORY_WORKSHEET_NAME)
+        session = requests.Session()
+        session.trust_env = False
+        response = session.get(csv_url, timeout=15)
+        response.raise_for_status()
+        df = pd.read_csv(BytesIO(response.content))
+        if df.empty:
+            return []
+        df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
+        records = df.fillna("").to_dict(orient="records")
+        return normalize_sheet_sync_history(records)
     except Exception:
         return []
 

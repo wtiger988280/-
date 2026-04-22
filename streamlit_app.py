@@ -932,16 +932,17 @@ def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, conta
     selected_day_value = st.session_state.get(f"{prefix}_day_filter", "전체")
 
     if selected_day_value != "전체":
-        date_label = f"날짜 · 일 | {selected_day_value}"
+        selected_display = f"일 | {selected_day_value}"
     elif selected_month_value != "전체":
-        date_label = f"날짜 · 월 | {selected_month_value}"
+        selected_display = f"월 | {selected_month_value}"
     elif selected_year != "전체":
-        date_label = f"날짜 · 년 | {selected_year}"
+        selected_display = f"년 | {selected_year}"
     else:
-        date_label = "날짜"
+        selected_display = "전체"
 
     with container:
-        with st.popover(date_label, use_container_width=True):
+        st.markdown("##### 날짜")
+        with st.popover(selected_display, use_container_width=True):
             date_cols = st.columns(3)
             selected_year = date_cols[0].selectbox("년", years, key=f"{prefix}_year_filter")
 

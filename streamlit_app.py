@@ -958,6 +958,36 @@ def expand_history_rows_by_blade(history_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(expanded_rows)
 
 
+def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
+    if history_df.empty:
+        return history_df
+
+    normalized_df = history_df.copy()
+    for column in ["반영 사용량(m)", "반영 사용량(회)"]:
+        if column in normalized_df.columns:
+            normalized_df[column] = pd.to_numeric(normalized_df[column], errors="coerce").fillna(0)
+
+    group_columns = [column for column in ["반영시각", "설비", "날물명"] if column in normalized_df.columns]
+    if not group_columns:
+        return normalized_df
+
+    aggregation_map: dict[str, Any] = {}
+    if "반영 사용량(m)" in normalized_df.columns:
+        aggregation_map["반영 사용량(m)"] = "sum"
+    if "반영 사용량(회)" in normalized_df.columns:
+        aggregation_map["반영 사용량(회)"] = "sum"
+    if "데이터 기준일자" in normalized_df.columns:
+        aggregation_map["데이터 기준일자"] = lambda values: ", ".join(
+            sorted({str(value).strip() for value in values if str(value).strip() and str(value).strip().lower() != "nan"})
+        )
+
+    if not aggregation_map:
+        return normalized_df
+
+    aggregated_df = normalized_df.groupby(group_columns, as_index=False).agg(aggregation_map)
+    return aggregated_df
+
+
 def send_teams_complete_alert(row: dict[str, Any]) -> None:
     webhook_url = st.session_state.teams_webhook_url.strip()
     if not webhook_url:
@@ -1756,28 +1786,8 @@ def main() -> None:
             selected_history_blade = history_filter_cols[2].selectbox("날물명", blade_options, key="history_blade_filter")
             if selected_history_blade != "전체":
                 history_df = history_df[history_df["날물명"] == selected_history_blade]
+            history_df = aggregate_history_rows(history_df)
             history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
-            if not history_df.empty:
-                for column in ["반영 사용량(m)", "반영 사용량(회)"]:
-                    if column in history_df.columns:
-                        history_df[column] = pd.to_numeric(history_df[column], errors="coerce").fillna(0)
-                group_columns = [column for column in ["반영시각", "설비", "날물명"] if column in history_df.columns]
-                if group_columns:
-                    aggregation_map: dict[str, Any] = {}
-                    if "반영 사용량(m)" in history_df.columns:
-                        aggregation_map["반영 사용량(m)"] = "sum"
-                    if "반영 사용량(회)" in history_df.columns:
-                        aggregation_map["반영 사용량(회)"] = "sum"
-                    if "데이터 기준일자" in history_df.columns:
-                        aggregation_map["데이터 기준일자"] = lambda values: ", ".join(
-                            sorted({str(value).strip() for value in values if str(value).strip() and str(value).strip().lower() != "nan"})
-                        )
-                    history_df = (
-                        history_df
-                        .groupby(group_columns, as_index=False)
-                        .agg(aggregation_map)
-                    )
-                    history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
             history_df["_machine_sort"] = history_df["설비"].apply(get_machine_sort_key)
             history_df["_blade_sort"] = history_df["날물명"].apply(get_blade_sort_key)
             history_df = (

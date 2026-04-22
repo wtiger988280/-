@@ -1757,14 +1757,27 @@ def main() -> None:
             if selected_history_blade != "전체":
                 history_df = history_df[history_df["날물명"] == selected_history_blade]
             history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
-            dedupe_columns = [column for column in ["설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"] if column in history_df.columns]
-            if dedupe_columns:
-                history_df = (
-                    history_df
-                    .sort_values(by="_sort_time", ascending=False, na_position="last")
-                    .drop_duplicates(subset=dedupe_columns, keep="first")
-                    .sort_values(by="_sort_time", ascending=False, na_position="last")
-                )
+            if not history_df.empty:
+                for column in ["반영 사용량(m)", "반영 사용량(회)"]:
+                    if column in history_df.columns:
+                        history_df[column] = pd.to_numeric(history_df[column], errors="coerce").fillna(0)
+                group_columns = [column for column in ["반영시각", "설비", "날물명"] if column in history_df.columns]
+                if group_columns:
+                    aggregation_map: dict[str, Any] = {}
+                    if "반영 사용량(m)" in history_df.columns:
+                        aggregation_map["반영 사용량(m)"] = "sum"
+                    if "반영 사용량(회)" in history_df.columns:
+                        aggregation_map["반영 사용량(회)"] = "sum"
+                    if "데이터 기준일자" in history_df.columns:
+                        aggregation_map["데이터 기준일자"] = lambda values: ", ".join(
+                            sorted({str(value).strip() for value in values if str(value).strip() and str(value).strip().lower() != "nan"})
+                        )
+                    history_df = (
+                        history_df
+                        .groupby(group_columns, as_index=False)
+                        .agg(aggregation_map)
+                    )
+                    history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
             history_df["_machine_sort"] = history_df["설비"].apply(get_machine_sort_key)
             history_df["_blade_sort"] = history_df["날물명"].apply(get_blade_sort_key)
             history_df = (

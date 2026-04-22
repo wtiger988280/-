@@ -894,9 +894,9 @@ def apply_date_dropdown_filter(df: pd.DataFrame, column: str, prefix: str, conta
     options = ["전체"]
     for year in years[1:]:
         options.append(f"년 | {year}")
-        for month in months_by_year.get(year, []):
+        for month in [f"{value:02d}" for value in range(1, 13)]:
             options.append(f"월 | {year}-{month}")
-            for day in days_by_year_month.get((year, month), []):
+            for day in [f"{value:02d}" for value in range(1, 32)]:
                 options.append(f"일 | {year}-{month}-{day}")
 
     selected = container.selectbox("날짜", options, key=f"{prefix}_date_filter")

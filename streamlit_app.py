@@ -744,7 +744,6 @@ def auto_sync_fragment() -> None:
         )
         st.session_state.last_applied_upload_at = latest_updated_at
         save_dashboard_state()
-        st.rerun()
     except Exception:
         return
 

@@ -514,7 +514,7 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
 
         normalized.append(
             {
-                "반영시각": normalize_display_timestamp(sync_at),
+                "반영시각": str(sync_at).strip(),
                 "대상": target,
                 "설비": machine,
                 "날물명": blade_name,
@@ -1347,7 +1347,11 @@ def sync_from_google_sheet(
     if history_entries and not is_duplicate_sync:
         st.session_state.sheet_sync_history = history_entries + st.session_state.sheet_sync_history
         save_sheet_sync_history(st.session_state.sheet_sync_history)
-    st.session_state.last_sheet_sync_at = normalize_display_timestamp(sync_time)
+        st.session_state.last_sheet_sync_at = sync_time
+    elif is_duplicate_sync:
+        existing_history = st.session_state.get("sheet_sync_history", [])
+        if existing_history:
+            st.session_state.last_sheet_sync_at = str(existing_history[0].get("반영시각", st.session_state.get("last_sheet_sync_at", ""))).strip()
     st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(sync_details)
     if not is_duplicate_sync:
         updated_hashes = [*existing_hashes, sync_hash]

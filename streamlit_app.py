@@ -391,6 +391,32 @@ def get_history_blade_list(machine: str, rows: list[dict[str, Any]] | None = Non
     return []
 
 
+def get_machine_sort_key(machine: str) -> tuple[int, int]:
+    normalized_machine = normalize_machine_name(machine)
+    line_order = {"엣지": 0, "런닝": 1, "양면": 2, "포인트": 3, "수직": 4}
+    line_name = infer_line_from_machine(normalized_machine)
+    digits = "".join(ch for ch in normalized_machine if ch.isdigit())
+    machine_no = int(digits) if digits else 999
+    return line_order.get(line_name, 99), machine_no
+
+
+def get_blade_sort_key(blade_name: str) -> int:
+    preferred_order = [
+        "Φ35 날물",
+        "Φ20 날물",
+        "Φ12(관통) 날물",
+        "Φ8(관통) 날물",
+        "Φ15 날물",
+        "Φ5(관통) 날물",
+        "AT 날물(전면)",
+        "AT 날물(후면)",
+    ]
+    try:
+        return preferred_order.index(str(blade_name).strip())
+    except ValueError:
+        return len(preferred_order)
+
+
 def normalize_edge_blade_name(machine: str, blade_name: Any) -> str:
     normalized_machine = normalize_machine_name(machine)
     raw_blade_name = str(blade_name or "").strip()
@@ -1710,10 +1736,21 @@ def main() -> None:
                     .drop_duplicates(subset=dedupe_columns, keep="first")
                     .sort_values(by="_sort_time", ascending=False, na_position="last")
                 )
+            history_df["_machine_sort"] = history_df["설비"].apply(get_machine_sort_key)
+            history_df["_blade_sort"] = history_df["날물명"].apply(get_blade_sort_key)
+            history_df = (
+                history_df
+                .sort_values(
+                    by=["_sort_time", "_machine_sort", "_blade_sort", "설비", "날물명"],
+                    ascending=[False, True, True, True, True],
+                    na_position="last",
+                )
+                .reset_index(drop=True)
+            )
             for column in ["반영 사용량(m)", "반영 사용량(회)"]:
                 if column in history_df.columns:
                     history_df[column] = history_df[column].where(history_df[column].notna(), "")
-            history_df = history_df.drop(columns=["_line", "_sort_time"], errors="ignore")
+            history_df = history_df.drop(columns=["_line", "_sort_time", "_machine_sort", "_blade_sort"], errors="ignore")
             if not history_df.empty:
                 st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
             else:

@@ -577,7 +577,7 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
     for entry in history:
         if not isinstance(entry, dict):
             continue
-        machine = normalize_machine_name(str(entry.get("설비", entry.get("?ㅻ퉬", ""))).strip())
+        raw_machine = str(entry.get("설비", entry.get("?ㅻ퉬", ""))).strip()
         target = str(entry.get("대상", entry.get("???", ""))).strip()
         usage_m_key = "반영 사용량(m)" if "반영 사용량(m)" in entry else "諛섏쁺 ?ъ슜??m)"
         usage_count_key = "반영 사용량(회)" if "반영 사용량(회)" in entry else "諛섏쁺 ?ъ슜????"
@@ -586,6 +586,11 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
         blade_name = entry.get("날물명", entry.get("?좊Ъ紐?", ""))
         usage_m = entry.get(usage_m_key, "")
         usage_count = entry.get(usage_count_key, "")
+        if not raw_machine and not target:
+            continue
+        machine = normalize_machine_name(raw_machine)
+        if not machine:
+            continue
 
         is_boring = machine.startswith(("수직", "포인트", "런닝", "양면", "?섏쭅", "?ъ씤??", "?곕떇", "?묐㈃"))
         is_edge = machine.startswith(("엣지", "?ｌ?"))
@@ -1471,6 +1476,14 @@ def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]
     save_dashboard_state()
 
 
+def has_boring_history_rows(history: list[dict[str, Any]]) -> bool:
+    for entry in history:
+        machine = normalize_machine_name(str(entry.get("설비", entry.get("?ㅻ퉬", ""))).strip())
+        if is_boring_machine(machine):
+            return True
+    return False
+
+
 def handle_excel_upload(uploaded_file, target_machine: str) -> None:
     if uploaded_file is None:
         return
@@ -1981,7 +1994,14 @@ def main() -> None:
     dataset_type = str(latest_info.get("dataset_type", "")).strip()
     current_snapshot_key = f"{auto_sheet_name}|{auto_sheet_updated_at}|{dataset_type}"
     has_sync_result = bool(st.session_state.get("last_sheet_sync_details")) and bool(st.session_state.get("last_sheet_sync_at"))
-    if dataset_type == "보링" and auto_sheet_updated_at:
+    if dataset_type == "보링" and auto_sheet_updated_at and (
+        st.session_state.get("boring_snapshot_loaded_key", "") != current_snapshot_key
+        or not has_boring_history_rows(st.session_state.get("sheet_sync_history", []))
+        or not any(
+            is_boring_machine(str(row.get("machine", ""))) and parse_numeric_value(row.get("usage", 0)) > 0
+            for row in st.session_state.get("equipment_data", [])
+        )
+    ):
         try:
             sync_from_google_sheet(
                 auto_sheet_url,

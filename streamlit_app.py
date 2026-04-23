@@ -983,6 +983,19 @@ def normalize_machine_name(value: Any) -> str:
     }
     if compact in boring_aliases:
         return boring_aliases[compact]
+    if compact.startswith("NC보링기수직#"):
+        digits = "".join(ch for ch in compact if ch.isdigit())
+        if digits:
+            return f"수직 #{digits[-1]}"
+    if compact.startswith("NC보링기#3(") and "A동" not in compact:
+        return "포인트 #3"
+    if compact.startswith("NC보링기#26"):
+        return "양면 #26"
+    if compact.startswith("NC보링기#27"):
+        return "양면 #27"
+    for running_no in ["19", "20", "21", "22", "23", "24"]:
+        if compact.startswith(f"NC보링기#{running_no}"):
+            return f"런닝 #{running_no}"
     digits = "".join(ch for ch in raw if ch.isdigit())
     if digits and digits[0] in "123456" and "엣지" in raw:
         return f"엣지 #{digits[0]}"

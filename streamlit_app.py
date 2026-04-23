@@ -350,6 +350,8 @@ def init_state() -> None:
         st.session_state.last_applied_upload_at = saved_state.get("last_applied_upload_at", "")
     if "last_snapshot_sync_key" not in st.session_state:
         st.session_state.last_snapshot_sync_key = saved_state.get("last_snapshot_sync_key", "")
+    if "boring_snapshot_loaded_key" not in st.session_state:
+        st.session_state.boring_snapshot_loaded_key = saved_state.get("boring_snapshot_loaded_key", "")
     if "usage_reset_at" not in st.session_state:
         st.session_state.usage_reset_at = saved_state.get("usage_reset_at", "")
     if "line_filter_toggle" not in st.session_state:
@@ -771,6 +773,7 @@ def save_dashboard_state() -> None:
         "auto_sheet_updated_at": st.session_state.get("auto_sheet_updated_at", ""),
         "last_applied_upload_at": st.session_state.get("last_applied_upload_at", ""),
         "last_snapshot_sync_key": st.session_state.get("last_snapshot_sync_key", ""),
+        "boring_snapshot_loaded_key": st.session_state.get("boring_snapshot_loaded_key", ""),
         "usage_reset_at": st.session_state.get("usage_reset_at", ""),
         "line_filter_toggle": st.session_state.get("line_filter_toggle", "all"),
         "line_machine_filter": st.session_state.get("line_machine_filter", "전체"),
@@ -1873,6 +1876,21 @@ def main() -> None:
     dataset_type = str(latest_info.get("dataset_type", "")).strip()
     current_snapshot_key = f"{auto_sheet_name}|{auto_sheet_updated_at}|{dataset_type}"
     has_sync_result = bool(st.session_state.get("last_sheet_sync_details")) and bool(st.session_state.get("last_sheet_sync_at"))
+    if dataset_type == "보링" and auto_sheet_updated_at and st.session_state.get("boring_snapshot_loaded_key", "") != current_snapshot_key:
+        try:
+            sync_from_google_sheet(
+                auto_sheet_url,
+                "auto",
+                worksheet_name=auto_sheet_name or None,
+                worksheet_gid=st.session_state.get("auto_sheet_gid") or None,
+                silent=True,
+            )
+            st.session_state.boring_snapshot_loaded_key = current_snapshot_key
+            st.session_state.last_applied_upload_at = auto_sheet_updated_at
+            st.session_state.last_snapshot_sync_key = current_snapshot_key
+            save_dashboard_state()
+        except Exception:
+            pass
     if auto_sheet_updated_at and (
         auto_sheet_updated_at != st.session_state.get("last_applied_upload_at", "")
         or not has_sync_result

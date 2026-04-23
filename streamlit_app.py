@@ -1039,10 +1039,10 @@ def remove_redundant_boring_summary_rows(history_df: pd.DataFrame) -> pd.DataFra
         return history_df
 
     normalized_df = history_df.copy()
-    machine_col = "?ㅻ퉬"
-    blade_col = "?좊Ъ紐?"
-    time_col = "諛섏쁺?쒓컖"
-    if not {machine_col, blade_col, time_col}.issubset(normalized_df.columns):
+    machine_col = next((col for col in ["설비", "?ㅻ퉬"] if col in normalized_df.columns), None)
+    blade_col = next((col for col in ["날물명", "?좊Ъ紐?"] if col in normalized_df.columns), None)
+    time_col = next((col for col in ["반영시각", "諛섏쁺?쒓컖"] if col in normalized_df.columns), None)
+    if not machine_col or not blade_col or not time_col:
         return normalized_df
 
     normalized_df[machine_col] = normalized_df[machine_col].fillna("").astype(str).str.strip()

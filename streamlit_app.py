@@ -1027,11 +1027,46 @@ def expand_history_rows_by_blade(history_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(expanded_rows)
 
 
+def remove_redundant_boring_summary_rows(history_df: pd.DataFrame) -> pd.DataFrame:
+    if history_df.empty:
+        return history_df
+
+    normalized_df = history_df.copy()
+    machine_col = "?ㅻ퉬"
+    blade_col = "?좊Ъ紐?"
+    time_col = "諛섏쁺?쒓컖"
+    if not {machine_col, blade_col, time_col}.issubset(normalized_df.columns):
+        return normalized_df
+
+    normalized_df[machine_col] = normalized_df[machine_col].fillna("").astype(str).str.strip()
+    normalized_df[blade_col] = normalized_df[blade_col].fillna("").astype(str).str.strip()
+    normalized_df[time_col] = normalized_df[time_col].fillna("").astype(str).str.strip()
+
+    boring_mask = normalized_df[machine_col].apply(lambda value: infer_line_from_machine(value) == "boring")
+    if not boring_mask.any():
+        return normalized_df
+
+    detailed_keys = {
+        (row[time_col], row[machine_col])
+        for _, row in normalized_df.loc[boring_mask & normalized_df[blade_col].ne("")].iterrows()
+    }
+    if not detailed_keys:
+        return normalized_df
+
+    keep_mask = ~(
+        boring_mask
+        & normalized_df[blade_col].eq("")
+        & normalized_df.apply(lambda row: (row[time_col], row[machine_col]) in detailed_keys, axis=1)
+    )
+    return normalized_df.loc[keep_mask].reset_index(drop=True)
+
+
 def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
     if history_df.empty:
         return history_df
 
     normalized_df = history_df.copy()
+    normalized_df = remove_redundant_boring_summary_rows(normalized_df)
     for column in ["반영 사용량(m)", "반영 사용량(회)"]:
         if column in normalized_df.columns:
             normalized_df[column] = pd.to_numeric(normalized_df[column], errors="coerce").fillna(0)

@@ -1304,11 +1304,24 @@ def get_boring_blade_code(value: Any) -> str:
     return match.group(1) if match else raw
 
 
+def normalize_boring_blade_name(value: Any) -> str:
+    blade_code = get_boring_blade_code(value)
+    blade_map = {
+        "5": "Φ5(관통) 날물",
+        "8": "Φ8(관통) 날물",
+        "12": "Φ12(관통) 날물",
+        "15": "Φ15 날물",
+        "20": "Φ20 날물",
+        "35": "Φ35 날물",
+    }
+    return blade_map.get(blade_code, str(value or "").strip())
+
+
 def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]) -> None:
     snapshot_map: dict[tuple[str, str], dict[str, Any]] = {}
     for (machine, blade_name), payload in grouped.items():
         normalized_machine = normalize_machine_name(machine)
-        blade_code = get_boring_blade_code(blade_name)
+        blade_code = get_boring_blade_code(normalize_boring_blade_name(blade_name))
         snapshot_map[(normalized_machine, blade_code)] = payload
 
     next_rows: list[dict[str, Any]] = []
@@ -1451,7 +1464,7 @@ def sync_from_google_sheet(
                 boring_blade_records.append(
                     {
                         "machine": machine,
-                        "blade_name": blade_column,
+                        "blade_name": normalize_boring_blade_name(blade_column),
                         "usageM": 0.0,
                         "usageCount": blade_usage,
                         "prodDate": prod_date,

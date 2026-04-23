@@ -104,6 +104,11 @@ def extract_sync_time_from_text(value: Any) -> str:
     match = __import__("re").search(r"grd_List_(\d{14})", raw, __import__("re").IGNORECASE)
     if not match:
         return now_kst().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        parsed = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=KST)
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def normalize_history_date_value(value: Any) -> str:
@@ -122,11 +127,6 @@ def normalize_history_date_value(value: Any) -> str:
         return parsed.strftime("%Y-%m-%d")
     except Exception:
         return raw
-    try:
-        parsed = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=KST)
-        return parsed.strftime("%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def normalize_display_timestamp(value: Any) -> str:
@@ -174,7 +174,11 @@ def ensure_default_equipment_rows(data: list[dict[str, Any]]) -> list[dict[str, 
 
     for default_row in INITIAL_RAW_DATA:
         key = equipment_row_key(default_row)
-        merged_rows.append({**default_row, **existing_map.get(key, {})})
+        existing_row = existing_map.get(key, {})
+        merged_row = {**default_row, **existing_row}
+        for locked_field in ["line", "machine", "spindle", "bladeCode", "bladeName", "standard"]:
+            merged_row[locked_field] = default_row.get(locked_field)
+        merged_rows.append(merged_row)
 
     known_keys = {equipment_row_key(row) for row in INITIAL_RAW_DATA}
     for row in existing_rows:
@@ -1294,6 +1298,55 @@ def update_machine_usage(machine: str, total_usage_m: float, start_date: str, pe
     save_dashboard_state()
 
 
+def get_boring_blade_code(value: Any) -> str:
+    raw = str(value or "").strip()
+    match = __import__("re").search(r"(\d+)", raw)
+    return match.group(1) if match else raw
+
+
+def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]) -> None:
+    snapshot_map: dict[tuple[str, str], dict[str, Any]] = {}
+    for (machine, blade_name), payload in grouped.items():
+        normalized_machine = normalize_machine_name(machine)
+        blade_code = get_boring_blade_code(blade_name)
+        snapshot_map[(normalized_machine, blade_code)] = payload
+
+    next_rows: list[dict[str, Any]] = []
+    for item in st.session_state.equipment_data:
+        normalized_machine = normalize_machine_name(item.get("machine", ""))
+        if infer_line_from_machine(normalized_machine) != "boring":
+            next_rows.append(item)
+            continue
+
+        blade_code = get_boring_blade_code(get_display_blade_name(item))
+        payload = snapshot_map.get((normalized_machine, blade_code))
+        if payload is None:
+            next_rows.append(
+                {
+                    **item,
+                    "usage": 0,
+                    "standard": 10000,
+                    "avg7d": 0,
+                }
+            )
+            continue
+
+        total_usage = round(parse_numeric_value(payload.get("usage_count", 0)), 3)
+        start_date = str(payload.get("start_date", "") or item.get("installDate", "")).strip()
+        next_rows.append(
+            {
+                **item,
+                "usage": total_usage,
+                "standard": 10000,
+                "avg7d": max(1, round(total_usage / 7, 3)) if total_usage > 0 else 0,
+                "installDate": start_date or item.get("installDate", ""),
+            }
+        )
+
+    st.session_state.equipment_data = next_rows
+    save_dashboard_state()
+
+
 def handle_excel_upload(uploaded_file, target_machine: str) -> None:
     if uploaded_file is None:
         return
@@ -1499,11 +1552,14 @@ def sync_from_google_sheet(
         effective_target_label = target_machine
 
     sync_details = []
+    is_boring_snapshot = boring_count > 0 and edge_count == 0 and any(str(blade_name).strip() for _, blade_name in grouped.keys())
+    if not is_duplicate_sync and is_boring_snapshot:
+        replace_boring_usage_snapshot(grouped)
     for (machine, blade_name), payload in grouped.items():
         dates = pd.to_datetime(pd.Series(payload["dates"]), errors="coerce").dropna().sort_values()
         start_date = dates.iloc[0].date().isoformat() if not dates.empty else ""
         period_days = EDGE_UPLOAD_RULES.get(machine, {"periodDays": 7})["periodDays"]
-        if not is_duplicate_sync:
+        if not is_duplicate_sync and not is_boring_snapshot:
             update_machine_usage(machine, payload["total"], start_date, period_days, blade_name or None)
         sync_details.append(
             {

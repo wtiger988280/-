@@ -47,20 +47,20 @@ BORING_MACHINE_CONFIG = [
 
 BORING_BLADE_SPECS = [
     {"suffix": "035", "bladeName": "Φ35 날물", "standard": 10000, "avg7d": 420, "quality": 0, "spindle": "H1"},
-    {"suffix": "020", "bladeName": "Φ20 날물", "standard": 9000, "avg7d": 320, "quality": 0, "spindle": "H2"},
-    {"suffix": "012", "bladeName": "Φ12(관통) 날물", "standard": 10500, "avg7d": 410, "quality": 0, "spindle": "H3"},
-    {"suffix": "008", "bladeName": "Φ8(관통) 날물", "standard": 9800, "avg7d": 355, "quality": 0, "spindle": "MAIN"},
-    {"suffix": "015", "bladeName": "Φ15 날물", "standard": 9500, "avg7d": 300, "quality": 0, "spindle": "H4"},
-    {"suffix": "005", "bladeName": "Φ5(관통) 날물", "standard": 9200, "avg7d": 280, "quality": 0, "spindle": "H5"},
+    {"suffix": "020", "bladeName": "Φ20 날물", "standard": 10000, "avg7d": 320, "quality": 0, "spindle": "H2"},
+    {"suffix": "012", "bladeName": "Φ12(관통) 날물", "standard": 10000, "avg7d": 410, "quality": 0, "spindle": "H3"},
+    {"suffix": "008", "bladeName": "Φ8(관통) 날물", "standard": 10000, "avg7d": 355, "quality": 0, "spindle": "MAIN"},
+    {"suffix": "015", "bladeName": "Φ15 날물", "standard": 10000, "avg7d": 300, "quality": 0, "spindle": "H4"},
+    {"suffix": "005", "bladeName": "Φ5(관통) 날물", "standard": 10000, "avg7d": 280, "quality": 0, "spindle": "H5"},
 ]
 
 EDGE_MACHINE_DEFAULTS = [
-    {"line": "엣지", "machine": "엣지 #1", "spindle": "H1", "bladeCode": "AT-013-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-03", "usage": 0, "standard": 8000, "avg7d": 2000, "quality": 0},
-    {"line": "엣지", "machine": "엣지 #2", "spindle": "H2", "bladeCode": "AT-014-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-05", "usage": 0, "standard": 8000, "avg7d": 2000, "quality": 0},
-    {"line": "엣지", "machine": "엣지 #3,4", "spindle": "H1/H3", "bladeCode": "AT-015-016-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-06", "usage": 0, "standard": 60000, "avg7d": 15000, "quality": 0},
-    {"line": "엣지", "machine": "엣지 #5", "spindle": "H2", "bladeCode": "AT-017-B", "bladeName": "AT 날물(후면)", "installDate": "2026-02-27", "usage": 0, "standard": 8500, "avg7d": 2125, "quality": 0},
-    {"line": "엣지", "machine": "엣지 #6", "spindle": "MAIN-F", "bladeCode": "AT-018-F", "bladeName": "AT 날물(전면)", "installDate": "2026-03-26", "usage": 0, "standard": 40000, "avg7d": 10000, "quality": 0, "actionStep": ""},
-    {"line": "엣지", "machine": "엣지 #6", "spindle": "MAIN-B", "bladeCode": "AT-018-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-26", "usage": 0, "standard": 40000, "avg7d": 10000, "quality": 0, "actionStep": ""},
+    {"line": "엣지", "machine": "엣지 #1", "spindle": "H1", "bladeCode": "AT-013-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-03", "usage": 0, "standard": 15000, "avg7d": 2000, "quality": 0},
+    {"line": "엣지", "machine": "엣지 #2", "spindle": "H2", "bladeCode": "AT-014-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-05", "usage": 0, "standard": 15000, "avg7d": 2000, "quality": 0},
+    {"line": "엣지", "machine": "엣지 #3,4", "spindle": "H1/H3", "bladeCode": "AT-015-016-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-06", "usage": 0, "standard": 90000, "avg7d": 15000, "quality": 0},
+    {"line": "엣지", "machine": "엣지 #5", "spindle": "H2", "bladeCode": "AT-017-B", "bladeName": "AT 날물(후면)", "installDate": "2026-02-27", "usage": 0, "standard": 15000, "avg7d": 2125, "quality": 0},
+    {"line": "엣지", "machine": "엣지 #6", "spindle": "MAIN-F", "bladeCode": "AT-018-F", "bladeName": "AT 날물(전면)", "installDate": "2026-03-26", "usage": 0, "standard": 75000, "avg7d": 10000, "quality": 0, "actionStep": ""},
+    {"line": "엣지", "machine": "엣지 #6", "spindle": "MAIN-B", "bladeCode": "AT-018-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-26", "usage": 0, "standard": 75000, "avg7d": 10000, "quality": 0, "actionStep": ""},
 ]
 
 
@@ -97,6 +97,36 @@ def build_initial_raw_data() -> list[dict[str, Any]]:
 
 def now_kst() -> datetime:
     return datetime.now(KST)
+
+
+def extract_sync_time_from_text(value: Any) -> str:
+    raw = str(value or "").strip()
+    match = __import__("re").search(r"grd_List_(\d{14})", raw, __import__("re").IGNORECASE)
+    if not match:
+        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def normalize_history_date_value(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    try:
+        parsed = pd.to_datetime(raw, errors="coerce")
+        if pd.isna(parsed):
+            return raw
+        return parsed.strftime("%Y-%m-%d")
+    except Exception:
+        return raw
+    try:
+        parsed = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=KST)
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def normalize_display_timestamp(value: Any) -> str:
@@ -233,11 +263,11 @@ MACHINE_GROUPS = {
 }
 
 EDGE_FIXED_STANDARDS = {
-    "엣지 #1": 8000,
-    "엣지 #2": 8000,
-    "엣지 #3,4": 60000,
-    "엣지 #5": 8500,
-    "엣지 #6": 40000,
+    "엣지 #1": 15000,
+    "엣지 #2": 15000,
+    "엣지 #3,4": 90000,
+    "엣지 #5": 15000,
+    "엣지 #6": 75000,
 }
 
 STATUS_META = {
@@ -569,6 +599,46 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
             }
         )
     return normalized
+
+
+def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    combined_history = normalize_sheet_sync_history([*existing_history, *new_entries])
+    if not combined_history:
+        return []
+
+    history_df = pd.DataFrame(combined_history)
+    expected_columns = ["반영시각", "대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+    history_df = history_df.rename(
+        columns={
+            "諛섏쁺?쒓컖": "반영시각",
+            "???": "대상",
+            "?ㅻ퉬": "설비",
+            "?좊Ъ紐?": "날물명",
+            "諛섏쁺 ?ъ슜??m)": "반영 사용량(m)",
+            "諛섏쁺 ?ъ슜????": "반영 사용량(회)",
+            "?쒖옉??": "시작일",
+        }
+    )
+    history_df = history_df.loc[:, ~history_df.columns.duplicated()]
+    for column in expected_columns:
+        if column not in history_df.columns:
+            history_df[column] = ""
+    history_df = history_df[expected_columns]
+    history_df["반영시각"] = history_df["반영시각"].fillna("").astype(str).str.strip()
+    history_df["대상"] = history_df["대상"].fillna("").astype(str).str.strip()
+    history_df["설비"] = history_df["설비"].fillna("").astype(str).str.strip()
+    history_df["날물명"] = history_df["날물명"].fillna("").astype(str).str.strip()
+    history_df["시작일"] = history_df["시작일"].fillna("").astype(str).str.strip().apply(normalize_history_date_value)
+    history_df["반영 사용량(m)"] = pd.to_numeric(history_df["반영 사용량(m)"], errors="coerce")
+    history_df["반영 사용량(회)"] = pd.to_numeric(history_df["반영 사용량(회)"], errors="coerce")
+    history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
+    history_df = history_df.sort_values(by=["_sort_time", "반영시각"], ascending=[True, True], na_position="last")
+    dedupe_keys = ["대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+    history_df = history_df.drop_duplicates(subset=dedupe_keys, keep="first")
+    history_df = history_df.drop(columns=["_sort_time"], errors="ignore")
+    history_df["반영 사용량(m)"] = history_df["반영 사용량(m)"].apply(lambda value: "" if pd.isna(value) else round(float(value), 3))
+    history_df["반영 사용량(회)"] = history_df["반영 사용량(회)"].apply(lambda value: "" if pd.isna(value) else int(round(float(value))))
+    return normalize_sheet_sync_history(history_df.to_dict(orient="records"))
 
 
 def normalize_last_sheet_sync_details(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1410,7 +1480,7 @@ def sync_from_google_sheet(
             }
         )
 
-    sync_time = now_kst().strftime("%Y-%m-%d %H:%M:%S")
+    sync_time = extract_sync_time_from_text(worksheet_name or st.session_state.get("auto_sheet_name", "") or sheet_url)
     if grouped:
         synced_label = ", ".join(f"{machine}/{blade}" if blade else machine for machine, blade in grouped.keys())
     else:
@@ -1430,9 +1500,35 @@ def sync_from_google_sheet(
         for detail in sync_details
     ]
     if history_entries and not is_duplicate_sync:
-        st.session_state.sheet_sync_history = history_entries + st.session_state.sheet_sync_history
-        save_sheet_sync_history(st.session_state.sheet_sync_history)
-        st.session_state.last_sheet_sync_at = sync_time
+        previous_history = st.session_state.get("sheet_sync_history", [])
+        merged_history = merge_sheet_sync_history(previous_history, history_entries)
+        st.session_state.sheet_sync_history = merged_history
+        save_sheet_sync_history(merged_history)
+        new_keys = {
+            (
+                str(entry.get("대상", "")).strip(),
+                str(entry.get("설비", "")).strip(),
+                str(entry.get("날물명", "")).strip(),
+                str(entry.get("반영 사용량(m)", "")).strip(),
+                str(entry.get("반영 사용량(회)", "")).strip(),
+                str(entry.get("시작일", "")).strip(),
+            )
+            for entry in history_entries
+        }
+        matching_times = [
+            str(entry.get("반영시각", "")).strip()
+            for entry in merged_history
+            if (
+                str(entry.get("대상", "")).strip(),
+                str(entry.get("설비", "")).strip(),
+                str(entry.get("날물명", "")).strip(),
+                str(entry.get("반영 사용량(m)", "")).strip(),
+                str(entry.get("반영 사용량(회)", "")).strip(),
+                str(entry.get("시작일", "")).strip(),
+            )
+            in new_keys
+        ]
+        st.session_state.last_sheet_sync_at = min(matching_times) if matching_times else sync_time
     elif is_duplicate_sync:
         existing_history = st.session_state.get("sheet_sync_history", [])
         if existing_history:

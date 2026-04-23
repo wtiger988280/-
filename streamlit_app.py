@@ -328,7 +328,7 @@ def init_state() -> None:
         raw_details = saved_state.get("last_sheet_sync_details", [])
         st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(raw_details if isinstance(raw_details, list) else [])
     if "sheet_sync_history" not in st.session_state:
-        raw_history = saved_state.get("sheet_sync_history", load_sheet_sync_history())
+        raw_history = load_sheet_sync_history()
         st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
     if "completion_history" not in st.session_state:
         raw_completion = saved_state.get("completion_history", load_completion_history())
@@ -518,20 +518,20 @@ def load_latest_upload_info_from_sheet() -> dict[str, str]:
 
 def load_sheet_sync_history() -> list[dict[str, Any]]:
     remote_history = load_sheet_sync_history_from_sheet()
-    if remote_history:
-        return remote_history
+    local_history: list[dict[str, Any]] = []
     if not SHEET_SYNC_HISTORY_PATH.exists():
-        return []
+        return normalize_sheet_sync_history(remote_history)
     try:
         data = json.loads(SHEET_SYNC_HISTORY_PATH.read_text(encoding="utf-8"))
-        if not isinstance(data, list):
-            return []
-        normalized = normalize_sheet_sync_history(data)
-        if normalized != data:
-            save_sheet_sync_history(normalized)
-        return normalized
+        if isinstance(data, list):
+            local_history = normalize_sheet_sync_history(data)
+            if local_history != data:
+                save_sheet_sync_history(local_history)
     except Exception:
-        return []
+        local_history = []
+    if remote_history or local_history:
+        return merge_sheet_sync_history(local_history, remote_history)
+    return []
 
 
 def load_sheet_sync_history_from_sheet() -> list[dict[str, Any]]:
@@ -987,6 +987,10 @@ def normalize_machine_name(value: Any) -> str:
         digits = "".join(ch for ch in compact if ch.isdigit())
         if digits:
             return f"수직 #{digits[-1]}"
+    if "A동" in raw or "A동" in compact:
+        return raw
+    if compact.startswith("NC보링기#17"):
+        return raw
     if compact.startswith("NC보링기#3(") and "A동" not in compact:
         return "포인트 #3"
     if compact.startswith("NC보링기#26"):
@@ -1041,6 +1045,15 @@ def infer_line_from_machine(machine: str) -> str:
     if normalized.startswith("수직"):
         return "수직"
     return ""
+
+
+def is_edge_machine(machine: str) -> bool:
+    return infer_line_from_machine(machine) == "?ｌ?"
+
+
+def is_boring_machine(machine: str) -> bool:
+    line_name = infer_line_from_machine(machine)
+    return bool(line_name) and line_name != "?ｌ?"
 
 
 def parse_date_only(value: Any) -> date | None:
@@ -1144,7 +1157,7 @@ def remove_redundant_boring_summary_rows(history_df: pd.DataFrame) -> pd.DataFra
     normalized_df[blade_col] = normalized_df[blade_col].fillna("").astype(str).str.strip()
     normalized_df[time_col] = normalized_df[time_col].fillna("").astype(str).str.strip()
 
-    boring_mask = normalized_df[machine_col].apply(lambda value: infer_line_from_machine(value) == "boring")
+    boring_mask = normalized_df[machine_col].apply(is_boring_machine)
     if not boring_mask.any():
         return normalized_df
 
@@ -1425,7 +1438,7 @@ def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]
     next_rows: list[dict[str, Any]] = []
     for item in st.session_state.equipment_data:
         normalized_machine = normalize_machine_name(item.get("machine", ""))
-        if infer_line_from_machine(normalized_machine) != "boring":
+        if not is_boring_machine(normalized_machine):
             next_rows.append(item)
             continue
 
@@ -1968,7 +1981,7 @@ def main() -> None:
     dataset_type = str(latest_info.get("dataset_type", "")).strip()
     current_snapshot_key = f"{auto_sheet_name}|{auto_sheet_updated_at}|{dataset_type}"
     has_sync_result = bool(st.session_state.get("last_sheet_sync_details")) and bool(st.session_state.get("last_sheet_sync_at"))
-    if dataset_type == "보링" and auto_sheet_updated_at and st.session_state.get("boring_snapshot_loaded_key", "") != current_snapshot_key:
+    if dataset_type == "보링" and auto_sheet_updated_at:
         try:
             sync_from_google_sheet(
                 auto_sheet_url,

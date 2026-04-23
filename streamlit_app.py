@@ -2016,6 +2016,16 @@ def main() -> None:
         except Exception:
             pass
     auto_sync_fragment()
+    st.session_state.equipment_data = reconcile_edge_usage_from_history(
+        st.session_state.equipment_data,
+        st.session_state.get("sheet_sync_history", []),
+        st.session_state.get("usage_reset_at", ""),
+    )
+    st.session_state.equipment_data = reconcile_boring_usage_from_history(
+        st.session_state.equipment_data,
+        st.session_state.get("sheet_sync_history", []),
+        st.session_state.get("usage_reset_at", ""),
+    )
     enriched = enrich_data(st.session_state.equipment_data)
     process_replace_alerts(enriched)
 

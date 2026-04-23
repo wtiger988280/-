@@ -1606,8 +1606,30 @@ def sync_from_google_sheet(
         }
         for detail in sync_details
     ]
-    if history_entries and not is_duplicate_sync:
+    should_replace_boring_history = is_boring_snapshot
+    if history_entries and (not is_duplicate_sync or should_replace_boring_history):
         previous_history = st.session_state.get("sheet_sync_history", [])
+        if should_replace_boring_history:
+            replacement_keys = {
+                (
+                    str(entry.get("대상", "")).strip(),
+                    str(entry.get("설비", "")).strip(),
+                    str(entry.get("날물명", "")).strip(),
+                    str(entry.get("시작일", "")).strip(),
+                )
+                for entry in history_entries
+            }
+            previous_history = [
+                entry
+                for entry in previous_history
+                if (
+                    str(entry.get("대상", "")).strip(),
+                    str(entry.get("설비", "")).strip(),
+                    str(entry.get("날물명", "")).strip(),
+                    str(entry.get("시작일", "")).strip(),
+                )
+                not in replacement_keys
+            ]
         merged_history = merge_sheet_sync_history(previous_history, history_entries)
         st.session_state.sheet_sync_history = merged_history
         save_sheet_sync_history(merged_history)

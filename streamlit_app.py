@@ -363,6 +363,11 @@ def init_state() -> None:
         st.session_state.sheet_sync_history,
         st.session_state.get("usage_reset_at", ""),
     )
+    st.session_state.equipment_data = reconcile_boring_usage_from_history(
+        st.session_state.equipment_data,
+        st.session_state.sheet_sync_history,
+        st.session_state.get("usage_reset_at", ""),
+    )
 
 
 def get_status(rate: float, quality: int) -> str:
@@ -814,6 +819,80 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
                 "usage": total_usage,
                 "standard": EDGE_FIXED_STANDARDS.get(item["machine"], item["standard"]),
                 "avg7d": max(1, round(total_usage / period_days, 3)),
+                "installDate": aggregated[key]["start_date"] or item.get("installDate", ""),
+            }
+        )
+    return next_rows
+
+
+def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: list[dict[str, Any]], reset_at: str = "") -> list[dict[str, Any]]:
+    boring_entries = []
+    for entry in history:
+        sync_at = str(entry.get("반영시각", "")).strip()
+        if reset_at and sync_at and sync_at <= reset_at:
+            continue
+        machine = normalize_machine_name(str(entry.get("설비", "")).strip())
+        if infer_line_from_machine(machine) == "":
+            continue
+        if infer_line_from_machine(machine) == "엣지":
+            continue
+        blade_name = normalize_boring_blade_name(str(entry.get("날물명", "")).strip())
+        usage_count = parse_numeric_value(entry.get("반영 사용량(회)", 0))
+        start_date = str(entry.get("시작일", "")).strip()
+        if not machine or not blade_name:
+            continue
+        boring_entries.append(
+            {
+                "sync_at": sync_at,
+                "machine": machine,
+                "blade_name": blade_name,
+                "usage_count": usage_count,
+                "start_date": start_date,
+            }
+        )
+
+    if not boring_entries:
+        return data
+
+    latest_sync_at = max(entry["sync_at"] for entry in boring_entries if entry["sync_at"])
+    latest_entries = [entry for entry in boring_entries if entry["sync_at"] == latest_sync_at]
+
+    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
+    for entry in latest_entries:
+        key = (entry["machine"], entry["blade_name"])
+        aggregated.setdefault(key, {"usage": 0.0, "start_date": ""})
+        aggregated[key]["usage"] += entry["usage_count"]
+        if entry["start_date"]:
+            current_start = aggregated[key]["start_date"]
+            aggregated[key]["start_date"] = min(current_start, entry["start_date"]) if current_start else entry["start_date"]
+
+    next_rows: list[dict[str, Any]] = []
+    for item in data:
+        machine = str(item.get("machine", "")).strip()
+        if infer_line_from_machine(machine) == "" or infer_line_from_machine(machine) == "엣지":
+            next_rows.append(item)
+            continue
+
+        blade_name = normalize_boring_blade_name(get_display_blade_name(item))
+        key = (machine, blade_name)
+        if key not in aggregated:
+            next_rows.append(
+                {
+                    **item,
+                    "usage": 0,
+                    "standard": 10000,
+                    "avg7d": 0,
+                }
+            )
+            continue
+
+        total_usage = round(aggregated[key]["usage"], 3)
+        next_rows.append(
+            {
+                **item,
+                "usage": total_usage,
+                "standard": 10000,
+                "avg7d": max(1, round(total_usage / 7, 3)) if total_usage > 0 else 0,
                 "installDate": aggregated[key]["start_date"] or item.get("installDate", ""),
             }
         )

@@ -329,7 +329,8 @@ def init_state() -> None:
         st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(raw_details if isinstance(raw_details, list) else [])
     if "sheet_sync_history" not in st.session_state:
         raw_history = load_sheet_sync_history()
-        st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
+        normalized_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
+        st.session_state.sheet_sync_history = overlay_latest_boring_snapshot_history(normalized_history)
     if "completion_history" not in st.session_state:
         raw_completion = saved_state.get("completion_history", load_completion_history())
         st.session_state.completion_history = raw_completion if isinstance(raw_completion, list) else []
@@ -859,11 +860,8 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
     if not boring_entries:
         return data
 
-    latest_sync_at = max(entry["sync_at"] for entry in boring_entries if entry["sync_at"])
-    latest_entries = [entry for entry in boring_entries if entry["sync_at"] == latest_sync_at]
-
     aggregated: dict[tuple[str, str], dict[str, Any]] = {}
-    for entry in latest_entries:
+    for entry in boring_entries:
         key = (entry["machine"], entry["blade_name"])
         aggregated.setdefault(key, {"usage": 0.0, "start_date": ""})
         aggregated[key]["usage"] += entry["usage_count"]
@@ -1433,6 +1431,102 @@ def normalize_boring_blade_name(value: Any) -> str:
     return blade_map.get(blade_code, str(value or "").strip())
 
 
+def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
+    latest_info = load_latest_upload_info()
+    if str(latest_info.get("dataset_type", "")).strip() != "보링":
+        return []
+
+    erp_file_name = str(latest_info.get("erp_file_name", "")).strip()
+    worksheet_title = str(latest_info.get("worksheet_title", "")).strip()
+    if not erp_file_name:
+        return []
+
+    stem = Path(erp_file_name).stem
+    xlsx_path = WORK_DIR / "output" / f"{stem}_merged.xlsx"
+    csv_path = WORK_DIR / "output" / f"{stem}_merged.csv"
+    if xlsx_path.exists():
+        try:
+            df = pd.read_excel(xlsx_path)
+        except Exception:
+            return []
+    elif csv_path.exists():
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception:
+            return []
+    else:
+        return []
+
+    df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
+    machine_col = next((c for c in ["설비명", "설비", "설비명▼"] if c in df.columns), None)
+    date_col = next((c for c in ["생산일", "작업일", "date"] if c in df.columns), None)
+    blade_columns = [
+        "Φ5(관통) 날물",
+        "Φ8(관통) 날물",
+        "Φ12(관통) 날물",
+        "Φ15 날물",
+        "Φ20 날물",
+        "Φ35 날물",
+    ]
+    existing_blade_columns = [column for column in blade_columns if column in df.columns]
+    if machine_col is None or not existing_blade_columns:
+        return []
+
+    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
+    for _, row in df.iterrows():
+        machine = normalize_machine_name(row.get(machine_col, ""))
+        if not is_boring_machine(machine):
+            continue
+
+        row_date = normalize_history_date_value(row.get(date_col, "")) if date_col else ""
+        for blade_column in existing_blade_columns:
+            usage_count = parse_numeric_value(row.get(blade_column, 0))
+            if usage_count <= 0:
+                continue
+
+            blade_name = normalize_boring_blade_name(blade_column)
+            key = (machine, blade_name)
+            aggregated.setdefault(key, {"usage_count": 0.0, "start_date": ""})
+            aggregated[key]["usage_count"] += usage_count
+            if row_date:
+                current_start = str(aggregated[key]["start_date"]).strip()
+                aggregated[key]["start_date"] = min(current_start, row_date) if current_start else row_date
+
+    if not aggregated:
+        return []
+
+    sync_time = extract_sync_time_from_text(worksheet_title or erp_file_name)
+    return [
+        {
+            "반영시각": sync_time,
+            "대상": "보링 전체",
+            "설비": machine,
+            "날물명": blade_name,
+            "반영 사용량(m)": "",
+            "반영 사용량(회)": round(payload["usage_count"], 3),
+            "시작일": payload["start_date"] or "",
+        }
+        for (machine, blade_name), payload in aggregated.items()
+    ]
+
+
+def overlay_latest_boring_snapshot_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    latest_boring_entries = load_latest_boring_snapshot_entries()
+    if not latest_boring_entries:
+        return history
+
+    sync_time = str(latest_boring_entries[0].get("반영시각", "")).strip()
+    preserved_history = [
+        entry
+        for entry in normalize_sheet_sync_history(history)
+        if not (
+            str(entry.get("대상", "")).strip() == "보링 전체"
+            and str(entry.get("반영시각", "")).strip() == sync_time
+        )
+    ]
+    return merge_sheet_sync_history(preserved_history, latest_boring_entries)
+
+
 def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]) -> None:
     snapshot_map: dict[tuple[str, str], dict[str, Any]] = {}
     for (machine, blade_name), payload in grouped.items():
@@ -1987,6 +2081,11 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
+    refreshed_history = overlay_latest_boring_snapshot_history(st.session_state.get("sheet_sync_history", []))
+    if refreshed_history != st.session_state.get("sheet_sync_history", []):
+        st.session_state.sheet_sync_history = refreshed_history
+        save_sheet_sync_history(refreshed_history)
+        save_dashboard_state()
     latest_info = refresh_auto_sheet_target()
     auto_sheet_url = st.session_state.auto_sheet_url
     auto_sheet_name = st.session_state.auto_sheet_name

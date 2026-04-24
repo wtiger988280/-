@@ -1438,24 +1438,40 @@ def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
 
     erp_file_name = str(latest_info.get("erp_file_name", "")).strip()
     worksheet_title = str(latest_info.get("worksheet_title", "")).strip()
-    if not erp_file_name:
-        return []
+    df: pd.DataFrame | None = None
 
-    stem = Path(erp_file_name).stem
-    xlsx_path = WORK_DIR / "output" / f"{stem}_merged.xlsx"
-    csv_path = WORK_DIR / "output" / f"{stem}_merged.csv"
-    if xlsx_path.exists():
+    spreadsheet_url = str(latest_info.get("spreadsheet_url", "")).strip()
+    worksheet_gid = str(latest_info.get("worksheet_gid", "")).strip()
+    if spreadsheet_url and worksheet_gid:
         try:
-            df = pd.read_excel(xlsx_path)
+            csv_url = to_google_sheet_csv_url(spreadsheet_url, worksheet_gid=worksheet_gid)
+            session = requests.Session()
+            session.trust_env = False
+            response = session.get(csv_url, timeout=30)
+            response.raise_for_status()
+            df = pd.read_csv(BytesIO(response.content))
         except Exception:
+            df = None
+
+    if df is None:
+        if not erp_file_name:
             return []
-    elif csv_path.exists():
-        try:
-            df = pd.read_csv(csv_path)
-        except Exception:
+
+        stem = Path(erp_file_name).stem
+        xlsx_path = WORK_DIR / "output" / f"{stem}_merged.xlsx"
+        csv_path = WORK_DIR / "output" / f"{stem}_merged.csv"
+        if xlsx_path.exists():
+            try:
+                df = pd.read_excel(xlsx_path)
+            except Exception:
+                return []
+        elif csv_path.exists():
+            try:
+                df = pd.read_csv(csv_path)
+            except Exception:
+                return []
+        else:
             return []
-    else:
-        return []
 
     df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
     machine_col = next((c for c in ["설비명", "설비", "설비명▼"] if c in df.columns), None)
@@ -2135,14 +2151,19 @@ def main() -> None:
         except Exception:
             pass
     auto_sync_fragment()
+    effective_history = overlay_latest_boring_snapshot_history(st.session_state.get("sheet_sync_history", []))
+    if effective_history != st.session_state.get("sheet_sync_history", []):
+        st.session_state.sheet_sync_history = effective_history
+        save_sheet_sync_history(effective_history)
+        save_dashboard_state()
     st.session_state.equipment_data = reconcile_edge_usage_from_history(
         st.session_state.equipment_data,
-        st.session_state.get("sheet_sync_history", []),
+        effective_history,
         st.session_state.get("usage_reset_at", ""),
     )
     st.session_state.equipment_data = reconcile_boring_usage_from_history(
         st.session_state.equipment_data,
-        st.session_state.get("sheet_sync_history", []),
+        effective_history,
         st.session_state.get("usage_reset_at", ""),
     )
     enriched = enrich_data(st.session_state.equipment_data)

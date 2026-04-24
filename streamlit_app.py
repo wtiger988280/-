@@ -29,6 +29,10 @@ UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
 SYNC_HISTORY_WORKSHEET_NAME = "DASHBOARD_SYNC_HISTORY"
 KST = ZoneInfo("Asia/Seoul")
 STREAMLIT_APP_REVISION = "2026-04-24 13:41"
+BORING_WORKSHEET_GID_BY_SYNC_TIME = {
+    "2026-04-23 10:15:08": "1062250441",
+    "2026-04-24 10:56:07": "1321320597",
+}
 
 
 BORING_MACHINE_CONFIG = [
@@ -1539,10 +1543,15 @@ def sync_time_to_boring_worksheet_title(sync_time: str) -> str:
 
 def load_boring_snapshot_entries_for_sync_time(sync_time: str, spreadsheet_url: str = DEFAULT_GOOGLE_SHEET_URL) -> list[dict[str, Any]]:
     worksheet_title = sync_time_to_boring_worksheet_title(sync_time)
-    if not worksheet_title or not spreadsheet_url:
+    worksheet_gid = BORING_WORKSHEET_GID_BY_SYNC_TIME.get(str(sync_time).strip(), "")
+    if (not worksheet_title and not worksheet_gid) or not spreadsheet_url:
         return []
     try:
-        csv_url = to_google_sheet_csv_url(spreadsheet_url, worksheet_name=worksheet_title)
+        csv_url = to_google_sheet_csv_url(
+            spreadsheet_url,
+            worksheet_name=None if worksheet_gid else worksheet_title,
+            worksheet_gid=worksheet_gid or None,
+        )
         session = requests.Session()
         session.trust_env = False
         response = session.get(csv_url, timeout=30)
@@ -2217,7 +2226,14 @@ def main() -> None:
         except Exception:
             pass
     auto_sync_fragment()
-    effective_history = st.session_state.get("sheet_sync_history", [])
+    effective_history = rebuild_boring_history_from_remote(
+        st.session_state.get("sheet_sync_history", []),
+        auto_sheet_url or DEFAULT_GOOGLE_SHEET_URL,
+    )
+    if effective_history != st.session_state.get("sheet_sync_history", []):
+        st.session_state.sheet_sync_history = effective_history
+        save_sheet_sync_history(effective_history)
+        save_dashboard_state()
     st.session_state.equipment_data = reconcile_edge_usage_from_history(
         st.session_state.equipment_data,
         effective_history,

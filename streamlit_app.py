@@ -652,7 +652,7 @@ def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries
     history_df["반영 사용량(회)"] = pd.to_numeric(history_df["반영 사용량(회)"], errors="coerce")
     history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
     history_df = history_df.sort_values(by=["_sort_time", "반영시각"], ascending=[True, True], na_position="last")
-    dedupe_keys = ["대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+    dedupe_keys = ["반영시각", "대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
     history_df = history_df.drop_duplicates(subset=dedupe_keys, keep="first")
     history_df = history_df.drop(columns=["_sort_time"], errors="ignore")
     history_df["반영 사용량(m)"] = history_df["반영 사용량(m)"].apply(lambda value: "" if pd.isna(value) else round(float(value), 3))

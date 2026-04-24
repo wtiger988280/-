@@ -12,6 +12,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -24,10 +25,46 @@ except ImportError:  # pragma: no cover
 DESKTOP_DIR = Path.home() / "Desktop"
 WORK_DIR = Path.cwd()
 DEFAULT_MAPPING = WORK_DIR / "edge_mapping.xlsx"
+DEFAULT_BORING_MACRO_PATHS = [
+    DESKTOP_DIR / "mpr 추출 매크로 보링.xlsm",
+    DESKTOP_DIR / "mpr 추출 매크로 (2).xlsm",
+]
 OUTPUT_DIR = WORK_DIR / "output"
 LOG_DIR = WORK_DIR / "logs"
 DEBUG_LOG_PATH = LOG_DIR / "edge_pipeline.log"
 LATEST_UPLOAD_INFO_PATH = LOG_DIR / "latest_sheet_upload.json"
+KST = ZoneInfo("Asia/Seoul")
+
+
+def now_kst() -> datetime:
+    return datetime.now(KST)
+
+
+def extract_sync_time_from_text(value: object) -> str:
+    text = "" if value is None else str(value)
+    match = re.search(r"grd_List_(\d{14})", text, flags=re.IGNORECASE)
+    if not match:
+        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def normalize_history_date_value(value: object) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return ""
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    try:
+        return pd.to_datetime(text, errors="coerce").strftime("%Y-%m-%d")
+    except Exception:
+        return text
+    try:
+        parsed = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=KST)
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 ERP_REQUIRED_COLUMNS = {"부품코드", "색상", "부품명", "생산량"}
 ERP_STRUCTURAL_COLUMNS = {"투입구분", "투입일", "생산일", "포장일자", "계획량", "투입량"}
@@ -75,6 +112,15 @@ TRANSFORMED_REQUIRED_COLUMNS = {
     "특기사항",
 }
 TRANSFORMED_OPTIONAL_COLUMNS = {"엣지사용량(m)"}
+
+BORING_BLADE_COLUMNS = [
+    "Φ5(관통) 날물",
+    "Φ8(관통) 날물",
+    "Φ12(관통) 날물",
+    "Φ15 날물",
+    "Φ20 날물",
+    "Φ35 날물",
+]
 
 ERP_COLUMNS = [
     "번호",
@@ -234,6 +280,15 @@ def normalize_color(value: object) -> str:
     return re.sub(r"\s+", "", text).strip().upper()
 
 
+def normalize_mpr_key(value: object) -> str:
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return ""
+    text = text.replace("\\", "/").split("/")[-1].strip()
+    text = re.sub(r"\.mpr$", "", text, flags=re.IGNORECASE)
+    return text.upper()
+
+
 def format_dimension(value: object) -> str:
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
     if pd.isna(numeric):
@@ -272,6 +327,118 @@ def pick_existing_column(columns: list[str], *candidates: str) -> str | None:
             return candidate
     return None
 
+
+def load_boring_macro_table(path: Path, logger: logging.Logger) -> pd.DataFrame:
+    logger.debug("load_boring_macro_table path=%s", path)
+    raw = pd.read_excel(path, sheet_name=0, header=0)
+    if "파일명" not in raw.columns:
+        raise ValueError(f"보링 매크로 파일에 '파일명' 열이 없습니다: {path.name}")
+
+    boring = raw.copy()
+    boring["파일명"] = boring["파일명"].fillna("").astype(str).str.strip()
+    boring = boring[boring["파일명"] != ""]
+
+    numeric_sources = {
+        "5_V": ["5_V", "5_H"],
+        "8_V": ["8_V", "8_H"],
+        "12_V": ["12_V"],
+        "15_V": ["15_V"],
+        "20_V": ["20_V"],
+        "35_V": ["35_V"],
+    }
+    for required_col in {item for values in numeric_sources.values() for item in values}:
+        if required_col not in boring.columns:
+            boring[required_col] = 0
+
+    boring["macro_key"] = boring["파일명"].map(normalize_mpr_key)
+    boring["Φ5(관통) 날물"] = sum(pd.to_numeric(boring[col], errors="coerce").fillna(0) for col in numeric_sources["5_V"])
+    boring["Φ8(관통) 날물"] = sum(pd.to_numeric(boring[col], errors="coerce").fillna(0) for col in numeric_sources["8_V"])
+    boring["Φ12(관통) 날물"] = pd.to_numeric(boring["12_V"], errors="coerce").fillna(0)
+    boring["Φ15 날물"] = pd.to_numeric(boring["15_V"], errors="coerce").fillna(0)
+    boring["Φ20 날물"] = pd.to_numeric(boring["20_V"], errors="coerce").fillna(0)
+    boring["Φ35 날물"] = pd.to_numeric(boring["35_V"], errors="coerce").fillna(0)
+
+    boring = (
+        boring.sort_values("macro_key")
+        .drop_duplicates("macro_key", keep="first")
+        [["macro_key", *BORING_BLADE_COLUMNS]]
+    )
+    logger.info("보링 매크로 로드 완료: %s행", len(boring))
+    return boring
+
+
+def load_combined_boring_macro_table(paths: list[Path], logger: logging.Logger) -> pd.DataFrame:
+    tables: list[pd.DataFrame] = []
+    existing_paths = [path for path in paths if path.exists()]
+    if not existing_paths:
+        missing = ", ".join(str(path) for path in paths)
+        raise FileNotFoundError(f"보링 매크로 파일을 찾지 못했습니다: {missing}")
+
+    for path in existing_paths:
+        tables.append(load_boring_macro_table(path, logger))
+
+    combined = pd.concat(tables, ignore_index=True)
+    combined = (
+        combined.sort_values("macro_key")
+        .drop_duplicates("macro_key", keep="first")
+        [["macro_key", *BORING_BLADE_COLUMNS]]
+    )
+    logger.info("보링 매크로 통합 완료: 파일 %s개, 총 %s행", len(existing_paths), len(combined))
+    return combined
+
+
+def apply_boring_macro_columns(merged: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
+    boring_macro = load_combined_boring_macro_table(DEFAULT_BORING_MACRO_PATHS, logger)
+    boring_lookup = {
+        row["macro_key"]: {column: row[column] for column in BORING_BLADE_COLUMNS}
+        for _, row in boring_macro.iterrows()
+        if row["macro_key"]
+    }
+
+    def build_candidates(row: pd.Series) -> list[str]:
+        raw_values = [
+            row.get("부품코드", ""),
+            row.get("제품코드", ""),
+            row.get("부품명", ""),
+        ]
+        candidates: list[str] = []
+        for raw in raw_values:
+            normalized = normalize_mpr_key(raw)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+        return candidates
+
+    match_keys: list[str] = []
+    boring_values = {column: [] for column in BORING_BLADE_COLUMNS}
+    for _, row in merged.iterrows():
+        matched_key = ""
+        matched_payload = {column: 0 for column in BORING_BLADE_COLUMNS}
+        production_qty = pd.to_numeric(pd.Series([row.get("생산량", 0)]), errors="coerce").fillna(0).iloc[0]
+        for candidate in build_candidates(row):
+            if candidate in boring_lookup:
+                matched_key = candidate
+                matched_payload = boring_lookup[candidate]
+                break
+        match_keys.append(matched_key)
+        for column in BORING_BLADE_COLUMNS:
+            boring_values[column].append(float(matched_payload[column]) * float(production_qty))
+
+    merged["보링매크로매칭키"] = match_keys
+    for column in BORING_BLADE_COLUMNS:
+        merged[column] = boring_values[column]
+
+    matched_count = int(pd.Series(match_keys).astype(str).ne("").sum())
+    logger.info("보링 매크로 매칭 완료: 총 %s행, 매칭 %s행", len(merged), matched_count)
+    return merged
+
+
+
+def build_boring_output_columns(merged: pd.DataFrame, output_columns: list[str]) -> list[str]:
+    ordered_columns = [column for column in output_columns if column != "엣지사용량(m)"]
+    for column in BORING_BLADE_COLUMNS:
+        if column in merged.columns and column not in ordered_columns:
+            ordered_columns.append(column)
+    return ordered_columns
 
 
 def convert_xls_to_xlsx(source: Path, destination_dir: Path, logger: logging.Logger) -> Path:
@@ -568,6 +735,10 @@ def merge_erp_with_mapping(erp_df: pd.DataFrame, mapping_df: pd.DataFrame, logge
     exact_match_count = int(merged["name_color_key"].isin(set(key_mapping["name_color_key"])).sum())
     logger.info("병합 완료: 총 %s행, 정확매칭 %s행", len(merged), exact_match_count)
 
+    if detect_dataset_type(merged) == "보링":
+        merged = apply_boring_macro_columns(merged, logger)
+        return merged[build_boring_output_columns(merged, output_columns)]
+
     ordered_columns = [
         *output_columns,
         "엣지사용량(m)",
@@ -580,7 +751,7 @@ def safe_write_excel(df: pd.DataFrame, path: Path) -> Path:
         df.to_excel(path, index=False)
         return path
     except PermissionError:
-        fallback = path.with_name(f"{path.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{path.suffix}")
+        fallback = path.with_name(f"{path.stem}_{now_kst().strftime('%Y%m%d_%H%M%S')}{path.suffix}")
         df.to_excel(fallback, index=False)
         return fallback
 
@@ -590,7 +761,7 @@ def safe_write_csv(df: pd.DataFrame, path: Path) -> Path:
         df.to_csv(path, index=False, encoding="utf-8-sig")
         return path
     except PermissionError:
-        fallback = path.with_name(f"{path.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{path.suffix}")
+        fallback = path.with_name(f"{path.stem}_{now_kst().strftime('%Y%m%d_%H%M%S')}{path.suffix}")
         df.to_csv(fallback, index=False, encoding="utf-8-sig")
         return fallback
 
@@ -613,6 +784,7 @@ def load_sheet_target(config_path: Path) -> dict[str, str]:
         "worksheet_mode": config.get("worksheet_mode", "new_sheet_per_upload"),
         "latest_worksheet_name": config.get("latest_worksheet_name", "DASHBOARD_LATEST"),
         "upload_info_worksheet_name": config.get("upload_info_worksheet_name", "DASHBOARD_UPLOAD_INFO"),
+        "history_worksheet_name": config.get("history_worksheet_name", "DASHBOARD_SYNC_HISTORY"),
     }
 
 
@@ -639,7 +811,7 @@ def create_unique_worksheet(spreadsheet, base_title: str, row_count: int, col_co
     existing_titles = {ws.title for ws in spreadsheet.worksheets()}
     title = base_title
     if title in existing_titles:
-        title = f"{base_title[:68]}_{datetime.now().strftime('%m%d_%H%M%S')}"
+        title = f"{base_title[:68]}_{now_kst().strftime('%m%d_%H%M%S')}"
     return spreadsheet.add_worksheet(
         title=title,
         rows=str(max(row_count + 10, 1000)),
@@ -678,7 +850,7 @@ def write_latest_upload_info(spreadsheet, worksheet, erp_path: Path, dataset_typ
         "worksheet_gid": str(getattr(worksheet, "id", "")),
         "erp_file_name": erp_path.name,
         "dataset_type": dataset_type,
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "updated_at": now_kst().isoformat(timespec="seconds"),
     }
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     LATEST_UPLOAD_INFO_PATH.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -694,6 +866,246 @@ def write_latest_upload_info_worksheet(spreadsheet, sheet_config: dict[str, str]
     )
     info_df = pd.DataFrame([info])
     write_dataframe_to_worksheet(worksheet, info_df)
+
+
+def normalize_dashboard_machine_name(raw_value: object) -> str:
+    raw = "" if raw_value is None else str(raw_value).strip()
+    compact = raw.replace(" ", "")
+    edge_aliases = {
+        "엣지밴더#1": "엣지 #1",
+        "엣지밴더#2": "엣지 #2",
+        "신규엣지밴더#3": "엣지 #3,4",
+        "신규엣지밴더#4": "엣지 #3,4",
+        "신규엣지밴더#5": "엣지 #5",
+        "더블엣지밴더#6": "엣지 #6",
+    }
+    if compact in edge_aliases:
+        return edge_aliases[compact]
+    boring_aliases = {
+        "NC보링기수직#1": "수직 #1",
+        "NC보링기수직#2": "수직 #2",
+        "NC보링기수직#3": "수직 #3",
+        "NC보링기#3(포인트보링기)": "포인트 #3",
+        "NC보링기#19": "런닝 #19",
+        "NC보링기#20": "런닝 #20",
+        "NC보링기#21": "런닝 #21",
+        "NC보링기#22": "런닝 #22",
+        "NC보링기#23": "런닝 #23",
+        "NC보링기#24": "런닝 #24",
+        "NC보링기#26(신규양면보링기)": "양면 #26",
+        "NC보링기#27(신규양면보링기)": "양면 #27",
+    }
+    if compact in boring_aliases:
+        return boring_aliases[compact]
+    return raw
+
+
+def build_sync_history_entries(result_df: pd.DataFrame, dataset_type: str, source_label: str = "") -> pd.DataFrame:
+    sync_time = extract_sync_time_from_text(source_label)
+    entries: list[dict[str, object]] = []
+    equipment_column = pick_existing_column(list(result_df.columns), "설비명▼", "설비명", "실적등록처")
+    date_column = pick_existing_column(list(result_df.columns), "생산일", "작업일")
+    material_column = pick_existing_column(list(result_df.columns), "재질", "재질▲")
+
+    if dataset_type == "보링":
+        if not equipment_column:
+            return pd.DataFrame()
+        boring_machines_seen: list[tuple[str, str]] = []
+        aggregated: dict[tuple[str, str], dict[str, object]] = {}
+        for _, row in result_df.iterrows():
+            machine = normalize_dashboard_machine_name(row.get(equipment_column, ""))
+            if not machine:
+                continue
+            base_date = str(row.get(date_column, "")).strip() if date_column else ""
+            machine_key = (machine, base_date)
+            if machine_key not in boring_machines_seen:
+                boring_machines_seen.append(machine_key)
+            for blade_column in BORING_BLADE_COLUMNS:
+                blade_usage = pd.to_numeric(pd.Series([row.get(blade_column, 0)]), errors="coerce").fillna(0).iloc[0]
+                aggregate_key = (machine, blade_column, base_date)
+                aggregated.setdefault(
+                    aggregate_key,
+                    {
+                        "반영시각": sync_time,
+                        "대상": "보링 전체",
+                        "설비": machine,
+                        "날물명": blade_column,
+                        "반영 사용량(m)": "",
+                        "반영 사용량(회)": 0,
+                        "시작일": base_date,
+                    },
+                )
+                aggregated[aggregate_key]["반영 사용량(회)"] = int(round(float(aggregated[aggregate_key]["반영 사용량(회)"]))) + int(round(float(blade_usage)))
+        for machine, base_date in boring_machines_seen:
+            for blade_column in BORING_BLADE_COLUMNS:
+                aggregate_key = (machine, blade_column, base_date)
+                payload = aggregated.setdefault(
+                    aggregate_key,
+                    {
+                        "반영시각": sync_time,
+                        "대상": "보링 전체",
+                        "설비": machine,
+                        "날물명": blade_column,
+                        "반영 사용량(m)": "",
+                        "반영 사용량(회)": 0,
+                        "시작일": base_date,
+                    },
+                )
+                entries.append(payload)
+    else:
+        if not equipment_column or "엣지사용량(m)" not in result_df.columns:
+            return pd.DataFrame()
+        for _, row in result_df.iterrows():
+            machine = normalize_dashboard_machine_name(row.get(equipment_column, ""))
+            usage_m = pd.to_numeric(pd.Series([row.get("엣지사용량(m)", 0)]), errors="coerce").fillna(0).iloc[0]
+            if not machine or usage_m <= 0:
+                continue
+            base_date = str(row.get(date_column, "")).strip() if date_column else ""
+            if machine == "엣지 #6":
+                front_count, back_count = parse_material_flags(row.get(material_column, ""))[:2], parse_material_flags(row.get(material_column, ""))[2:]
+                front_total = sum(front_count)
+                back_total = sum(back_count)
+                total = front_total + back_total
+                if total > 0:
+                    if front_total > 0:
+                        entries.append(
+                            {
+                                "반영시각": sync_time,
+                                "대상": "엣지 전체",
+                                "설비": machine,
+                                "날물명": "AT 날물(전면)",
+                                "반영 사용량(m)": round(float(usage_m) * front_total / total, 3),
+                                "반영 사용량(회)": "",
+                                "시작일": base_date,
+                            }
+                        )
+                    if back_total > 0:
+                        entries.append(
+                            {
+                                "반영시각": sync_time,
+                                "대상": "엣지 전체",
+                                "설비": machine,
+                                "날물명": "AT 날물(후면)",
+                                "반영 사용량(m)": round(float(usage_m) * back_total / total, 3),
+                                "반영 사용량(회)": "",
+                                "시작일": base_date,
+                            }
+                        )
+                    continue
+            entries.append(
+                {
+                    "반영시각": sync_time,
+                    "대상": "엣지 전체",
+                    "설비": machine,
+                    "날물명": "AT 날물(후면)",
+                    "반영 사용량(m)": round(float(usage_m), 3),
+                    "반영 사용량(회)": "",
+                    "시작일": base_date,
+                }
+            )
+
+    if not entries:
+        return pd.DataFrame()
+    history_df = pd.DataFrame(entries)
+    grouped = (
+        history_df.groupby(["반영시각", "대상", "설비", "날물명"], as_index=False)
+        .agg(
+            {
+                "반영 사용량(m)": lambda values: round(sum(float(v) for v in values if str(v).strip() not in {"", "nan"}), 3)
+                if any(str(v).strip() not in {"", "nan"} for v in values)
+                else "",
+                "반영 사용량(회)": lambda values: int(round(sum(float(v) for v in values if str(v).strip() not in {"", "nan"})))
+                if any(str(v).strip() not in {"", "nan"} for v in values)
+                else "",
+                "시작일": lambda values: min([str(v).strip() for v in values if str(v).strip()], default=""),
+            }
+        )
+    )
+    return grouped
+
+
+def normalize_sync_history_dataframe(history_df: pd.DataFrame) -> pd.DataFrame:
+    if history_df.empty:
+        return pd.DataFrame(
+            columns=[
+                "반영시각",
+                "대상",
+                "설비",
+                "날물명",
+                "반영 사용량(m)",
+                "반영 사용량(회)",
+                "시작일",
+            ]
+        )
+
+    normalized = history_df.copy()
+    expected_columns = [
+        "반영시각",
+        "대상",
+        "설비",
+        "날물명",
+        "반영 사용량(m)",
+        "반영 사용량(회)",
+        "시작일",
+    ]
+    normalized = normalized.rename(
+        columns={
+            "諛섏쁺?쒓컖": "반영시각",
+            "???": "대상",
+            "?ㅻ퉬": "설비",
+            "?좊Ъ紐?": "날물명",
+            "諛섏쁺 ?ъ슜??m)": "반영 사용량(m)",
+            "諛섏쁺 ?ъ슜????": "반영 사용량(회)",
+            "?쒖옉??": "시작일",
+        }
+    )
+    normalized = normalized.loc[:, ~normalized.columns.duplicated()]
+    for column in expected_columns:
+        if column not in normalized.columns:
+            normalized[column] = ""
+
+    normalized = normalized[expected_columns]
+    normalized["반영시각"] = normalized["반영시각"].fillna("").astype(str).str.strip()
+    normalized["대상"] = normalized["대상"].fillna("").astype(str).str.strip()
+    normalized["설비"] = normalized["설비"].fillna("").astype(str).str.strip()
+    normalized["날물명"] = normalized["날물명"].fillna("").astype(str).str.strip()
+    normalized["시작일"] = normalized["시작일"].fillna("").astype(str).str.strip().apply(normalize_history_date_value)
+    normalized["반영 사용량(m)"] = pd.to_numeric(normalized["반영 사용량(m)"], errors="coerce")
+    normalized["반영 사용량(회)"] = pd.to_numeric(normalized["반영 사용량(회)"], errors="coerce")
+    normalized["_sort_time"] = pd.to_datetime(normalized["반영시각"], errors="coerce")
+    normalized = normalized.sort_values(by=["_sort_time", "반영시각"], ascending=[True, True], na_position="last")
+
+    dedupe_keys = ["대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+    normalized = normalized.drop_duplicates(subset=dedupe_keys, keep="first")
+    normalized = normalized.drop(columns=["_sort_time"], errors="ignore")
+    normalized["반영 사용량(m)"] = normalized["반영 사용량(m)"].apply(
+        lambda value: "" if pd.isna(value) else round(float(value), 3)
+    )
+    normalized["반영 사용량(회)"] = normalized["반영 사용량(회)"].apply(
+        lambda value: "" if pd.isna(value) else int(round(float(value)))
+    )
+    return normalized.reset_index(drop=True)
+
+
+def write_sync_history_worksheet(spreadsheet, sheet_config: dict[str, str], history_df: pd.DataFrame) -> None:
+    if history_df.empty:
+        return
+    worksheet_title = sheet_config.get("history_worksheet_name", "DASHBOARD_SYNC_HISTORY")
+    try:
+        worksheet = spreadsheet.worksheet(worksheet_title)
+        existing_records = worksheet.get_all_records()
+        existing_df = pd.DataFrame(existing_records)
+    except gspread.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(
+            title=worksheet_title,
+            rows=str(max(len(history_df) + 100, 1000)),
+            cols=str(max(len(history_df.columns) + 5, 20)),
+        )
+        existing_df = pd.DataFrame()
+
+    combined_df = pd.concat([existing_df, history_df], ignore_index=True, sort=False)
+    combined_df = normalize_sync_history_dataframe(combined_df)
+    write_dataframe_to_worksheet(worksheet, combined_df)
 
 
 def upload_to_google_sheet(result_df: pd.DataFrame, sheet_config: dict[str, str], erp_path: Path, logger: logging.Logger) -> None:
@@ -729,6 +1141,7 @@ def upload_to_google_sheet(result_df: pd.DataFrame, sheet_config: dict[str, str]
 
     latest_info = write_latest_upload_info(spreadsheet, worksheet, erp_path, dataset_type)
     write_latest_upload_info_worksheet(spreadsheet, sheet_config, latest_info)
+    write_sync_history_worksheet(spreadsheet, sheet_config, build_sync_history_entries(result_df, dataset_type, erp_path.stem))
     logger.info("Google Sheets 업로드 완료: %s / %s / %s", dataset_type, sheet_config["spreadsheet_name"], worksheet.title)
 
 

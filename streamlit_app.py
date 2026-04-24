@@ -1431,48 +1431,7 @@ def normalize_boring_blade_name(value: Any) -> str:
     return blade_map.get(blade_code, str(value or "").strip())
 
 
-def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
-    latest_info = load_latest_upload_info()
-    if str(latest_info.get("dataset_type", "")).strip() != "보링":
-        return []
-
-    erp_file_name = str(latest_info.get("erp_file_name", "")).strip()
-    worksheet_title = str(latest_info.get("worksheet_title", "")).strip()
-    df: pd.DataFrame | None = None
-
-    spreadsheet_url = str(latest_info.get("spreadsheet_url", "")).strip()
-    worksheet_gid = str(latest_info.get("worksheet_gid", "")).strip()
-    if spreadsheet_url and worksheet_gid:
-        try:
-            csv_url = to_google_sheet_csv_url(spreadsheet_url, worksheet_gid=worksheet_gid)
-            session = requests.Session()
-            session.trust_env = False
-            response = session.get(csv_url, timeout=30)
-            response.raise_for_status()
-            df = pd.read_csv(BytesIO(response.content))
-        except Exception:
-            df = None
-
-    if df is None:
-        if not erp_file_name:
-            return []
-
-        stem = Path(erp_file_name).stem
-        xlsx_path = WORK_DIR / "output" / f"{stem}_merged.xlsx"
-        csv_path = WORK_DIR / "output" / f"{stem}_merged.csv"
-        if xlsx_path.exists():
-            try:
-                df = pd.read_excel(xlsx_path)
-            except Exception:
-                return []
-        elif csv_path.exists():
-            try:
-                df = pd.read_csv(csv_path)
-            except Exception:
-                return []
-        else:
-            return []
-
+def build_boring_history_entries_from_dataframe(df: pd.DataFrame, sync_time: str) -> list[dict[str, Any]]:
     df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
     machine_col = next((c for c in ["설비명", "설비", "설비명▼"] if c in df.columns), None)
     date_col = next((c for c in ["생산일", "작업일", "date"] if c in df.columns), None)
@@ -1511,7 +1470,6 @@ def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
     if not aggregated:
         return []
 
-    sync_time = extract_sync_time_from_text(worksheet_title or erp_file_name)
     return [
         {
             "반영시각": sync_time,
@@ -1524,6 +1482,117 @@ def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
         }
         for (machine, blade_name), payload in aggregated.items()
     ]
+
+
+def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
+    latest_info = load_latest_upload_info()
+    if str(latest_info.get("dataset_type", "")).strip() != "보링":
+        return []
+
+    erp_file_name = str(latest_info.get("erp_file_name", "")).strip()
+    worksheet_title = str(latest_info.get("worksheet_title", "")).strip()
+    sync_time = extract_sync_time_from_text(worksheet_title or erp_file_name)
+    df: pd.DataFrame | None = None
+
+    spreadsheet_url = str(latest_info.get("spreadsheet_url", "")).strip()
+    worksheet_gid = str(latest_info.get("worksheet_gid", "")).strip()
+    if spreadsheet_url and worksheet_gid:
+        try:
+            csv_url = to_google_sheet_csv_url(spreadsheet_url, worksheet_gid=worksheet_gid)
+            session = requests.Session()
+            session.trust_env = False
+            response = session.get(csv_url, timeout=30)
+            response.raise_for_status()
+            df = pd.read_csv(BytesIO(response.content))
+        except Exception:
+            df = None
+
+    if df is None:
+        if not erp_file_name:
+            return []
+
+        stem = Path(erp_file_name).stem
+        xlsx_path = WORK_DIR / "output" / f"{stem}_merged.xlsx"
+        csv_path = WORK_DIR / "output" / f"{stem}_merged.csv"
+        if xlsx_path.exists():
+            try:
+                df = pd.read_excel(xlsx_path)
+            except Exception:
+                return []
+        elif csv_path.exists():
+            try:
+                df = pd.read_csv(csv_path)
+            except Exception:
+                return []
+        else:
+            return []
+
+    return build_boring_history_entries_from_dataframe(df, sync_time)
+
+
+def sync_time_to_boring_worksheet_title(sync_time: str) -> str:
+    digits = "".join(ch for ch in str(sync_time or "") if ch.isdigit())
+    if len(digits) >= 14:
+        return f"보링_grd_List_{digits[:14]}"
+    return ""
+
+
+def load_boring_snapshot_entries_for_sync_time(sync_time: str, spreadsheet_url: str = DEFAULT_GOOGLE_SHEET_URL) -> list[dict[str, Any]]:
+    worksheet_title = sync_time_to_boring_worksheet_title(sync_time)
+    if not worksheet_title or not spreadsheet_url:
+        return []
+    try:
+        csv_url = to_google_sheet_csv_url(spreadsheet_url, worksheet_name=worksheet_title)
+        session = requests.Session()
+        session.trust_env = False
+        response = session.get(csv_url, timeout=30)
+        response.raise_for_status()
+        df = pd.read_csv(BytesIO(response.content))
+        if df.empty:
+            return []
+        return build_boring_history_entries_from_dataframe(df, sync_time)
+    except Exception:
+        return []
+
+
+def rebuild_boring_history_from_remote(history: list[dict[str, Any]], spreadsheet_url: str = DEFAULT_GOOGLE_SHEET_URL) -> list[dict[str, Any]]:
+    normalized_history = normalize_sheet_sync_history(history)
+    if not normalized_history:
+        return []
+
+    preserved_history = [
+        entry
+        for entry in normalized_history
+        if not (
+            str(entry.get("대상", "")).strip() == "보링 전체"
+            or is_boring_machine(str(entry.get("설비", "")).strip())
+        )
+    ]
+    boring_sync_times = sorted(
+        {
+            str(entry.get("반영시각", "")).strip()
+            for entry in normalized_history
+            if (str(entry.get("대상", "")).strip() == "보링 전체" or is_boring_machine(str(entry.get("설비", "")).strip()))
+            and str(entry.get("반영시각", "")).strip()
+        }
+    )
+    rebuilt_entries: list[dict[str, Any]] = []
+    for sync_time in boring_sync_times:
+        replacement_entries = load_boring_snapshot_entries_for_sync_time(sync_time, spreadsheet_url)
+        if replacement_entries:
+            rebuilt_entries.extend(replacement_entries)
+        else:
+            rebuilt_entries.extend(
+                [
+                    entry
+                    for entry in normalized_history
+                    if (
+                        (str(entry.get("대상", "")).strip() == "보링 전체" or is_boring_machine(str(entry.get("설비", "")).strip()))
+                        and str(entry.get("반영시각", "")).strip() == sync_time
+                    )
+                ]
+            )
+    return merge_sheet_sync_history(preserved_history, rebuilt_entries)
 
 
 def overlay_latest_boring_snapshot_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2097,7 +2166,11 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
-    refreshed_history = overlay_latest_boring_snapshot_history(st.session_state.get("sheet_sync_history", []))
+    refreshed_history = rebuild_boring_history_from_remote(
+        st.session_state.get("sheet_sync_history", []),
+        st.session_state.get("auto_sheet_url", DEFAULT_GOOGLE_SHEET_URL),
+    )
+    refreshed_history = overlay_latest_boring_snapshot_history(refreshed_history)
     if refreshed_history != st.session_state.get("sheet_sync_history", []):
         st.session_state.sheet_sync_history = refreshed_history
         save_sheet_sync_history(refreshed_history)

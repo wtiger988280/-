@@ -1912,6 +1912,7 @@ def sync_from_google_sheet(
         if should_replace_boring_history:
             replacement_keys = {
                 (
+                    str(entry.get("반영시각", "")).strip(),
                     str(entry.get("대상", "")).strip(),
                     str(entry.get("설비", "")).strip(),
                     str(entry.get("날물명", "")).strip(),
@@ -1923,6 +1924,7 @@ def sync_from_google_sheet(
                 entry
                 for entry in previous_history
                 if (
+                    str(entry.get("반영시각", "")).strip(),
                     str(entry.get("대상", "")).strip(),
                     str(entry.get("설비", "")).strip(),
                     str(entry.get("날물명", "")).strip(),

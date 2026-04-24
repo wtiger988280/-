@@ -329,8 +329,7 @@ def init_state() -> None:
         st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(raw_details if isinstance(raw_details, list) else [])
     if "sheet_sync_history" not in st.session_state:
         raw_history = load_sheet_sync_history()
-        normalized_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
-        st.session_state.sheet_sync_history = overlay_latest_boring_snapshot_history(normalized_history)
+        st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
     if "completion_history" not in st.session_state:
         raw_completion = saved_state.get("completion_history", load_completion_history())
         st.session_state.completion_history = raw_completion if isinstance(raw_completion, list) else []
@@ -1906,7 +1905,7 @@ def sync_from_google_sheet(
         }
         for detail in sync_details
     ]
-    should_replace_boring_history = is_boring_snapshot
+    should_replace_boring_history = False
     if history_entries and (not is_duplicate_sync or should_replace_boring_history):
         previous_history = st.session_state.get("sheet_sync_history", [])
         if should_replace_boring_history:
@@ -2168,15 +2167,6 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     init_state()
-    refreshed_history = rebuild_boring_history_from_remote(
-        st.session_state.get("sheet_sync_history", []),
-        st.session_state.get("auto_sheet_url", DEFAULT_GOOGLE_SHEET_URL),
-    )
-    refreshed_history = overlay_latest_boring_snapshot_history(refreshed_history)
-    if refreshed_history != st.session_state.get("sheet_sync_history", []):
-        st.session_state.sheet_sync_history = refreshed_history
-        save_sheet_sync_history(refreshed_history)
-        save_dashboard_state()
     latest_info = refresh_auto_sheet_target()
     auto_sheet_url = st.session_state.auto_sheet_url
     auto_sheet_name = st.session_state.auto_sheet_name
@@ -2226,11 +2216,7 @@ def main() -> None:
         except Exception:
             pass
     auto_sync_fragment()
-    effective_history = overlay_latest_boring_snapshot_history(st.session_state.get("sheet_sync_history", []))
-    if effective_history != st.session_state.get("sheet_sync_history", []):
-        st.session_state.sheet_sync_history = effective_history
-        save_sheet_sync_history(effective_history)
-        save_dashboard_state()
+    effective_history = st.session_state.get("sheet_sync_history", [])
     st.session_state.equipment_data = reconcile_edge_usage_from_history(
         st.session_state.equipment_data,
         effective_history,

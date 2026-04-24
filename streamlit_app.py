@@ -93,6 +93,9 @@ def build_initial_raw_data() -> list[dict[str, Any]]:
     line_prefix = {"수직": "V", "포인트": "P", "양면": "D", "런닝": "R"}
     for machine_config in BORING_MACHINE_CONFIG:
         for blade_spec in BORING_BLADE_SPECS:
+            standard = blade_spec["standard"]
+            if machine_config["line"] == "런닝" and blade_spec["bladeName"] == "Φ5(관통) 날물":
+                standard = 50000
             row = {
                 "id": row_id,
                 "plant": "충주",
@@ -103,7 +106,7 @@ def build_initial_raw_data() -> list[dict[str, Any]]:
                 "bladeName": blade_spec["bladeName"],
                 "installDate": machine_config["installDate"],
                 "usage": 0,
-                "standard": blade_spec["standard"],
+                "standard": standard,
                 "avg7d": blade_spec["avg7d"],
                 "quality": blade_spec["quality"],
             }
@@ -905,7 +908,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
                 {
                     **item,
                     "usage": 0,
-                    "standard": 10000,
+                    "standard": get_boring_standard(machine, blade_name),
                     "avg7d": 0,
                 }
             )
@@ -916,7 +919,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
             {
                 **item,
                 "usage": total_usage,
-                "standard": 10000,
+                "standard": get_boring_standard(machine, blade_name),
                 "avg7d": max(1, round(total_usage / 7, 3)) if total_usage > 0 else 0,
                 "installDate": aggregated[key]["start_date"] or item.get("installDate", ""),
             }
@@ -1453,6 +1456,14 @@ def normalize_boring_blade_name(value: Any) -> str:
     return blade_map.get(blade_code, str(value or "").strip())
 
 
+def get_boring_standard(machine: Any, blade_name: Any) -> int:
+    normalized_machine = normalize_machine_name(machine)
+    normalized_blade = normalize_boring_blade_name(blade_name)
+    if normalized_machine.startswith("런닝") and normalized_blade == "Φ5(관통) 날물":
+        return 50000
+    return 10000
+
+
 def build_boring_history_entries_from_dataframe(df: pd.DataFrame, sync_time: str) -> list[dict[str, Any]]:
     df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
     machine_col = next((c for c in ["설비명", "설비", "설비명▼"] if c in df.columns), None)
@@ -1659,7 +1670,7 @@ def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]
                 {
                     **item,
                     "usage": 0,
-                    "standard": 10000,
+                    "standard": get_boring_standard(normalized_machine, get_display_blade_name(item)),
                     "avg7d": 0,
                 }
             )
@@ -1671,7 +1682,7 @@ def replace_boring_usage_snapshot(grouped: dict[tuple[str, str], dict[str, Any]]
             {
                 **item,
                 "usage": total_usage,
-                "standard": 10000,
+                "standard": get_boring_standard(normalized_machine, get_display_blade_name(item)),
                 "avg7d": max(1, round(total_usage / 7, 3)) if total_usage > 0 else 0,
                 "installDate": start_date or item.get("installDate", ""),
             }

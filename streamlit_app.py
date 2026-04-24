@@ -59,6 +59,24 @@ BORING_BLADE_SPECS = [
     {"suffix": "005", "bladeName": "Φ5(관통) 날물", "standard": 10000, "avg7d": 280, "quality": 0, "spindle": "H5"},
 ]
 
+BORING_HISTORY_BLADE_COLUMNS = [
+    "Φ5(관통) 날물",
+    "Φ8(관통) 날물",
+    "Φ12(관통) 날물",
+    "Φ15 날물",
+    "Φ20 날물",
+    "Φ35 날물",
+]
+
+BORING_HISTORY_BLADE_NAMES = [
+    "Φ5(관통) 날물",
+    "Φ8(관통) 날물",
+    "Φ12(관통) 날물",
+    "Φ15 날물",
+    "Φ20 날물",
+    "Φ35 날물",
+]
+
 EDGE_MACHINE_DEFAULTS = [
     {"line": "엣지", "machine": "엣지 #1", "spindle": "H1", "bladeCode": "AT-013-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-03", "usage": 0, "standard": 15000, "avg7d": 2000, "quality": 0},
     {"line": "엣지", "machine": "엣지 #2", "spindle": "H2", "bladeCode": "AT-014-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-05", "usage": 0, "standard": 15000, "avg7d": 2000, "quality": 0},
@@ -1439,53 +1457,52 @@ def build_boring_history_entries_from_dataframe(df: pd.DataFrame, sync_time: str
     df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
     machine_col = next((c for c in ["설비명", "설비", "설비명▼"] if c in df.columns), None)
     date_col = next((c for c in ["생산일", "작업일", "date"] if c in df.columns), None)
-    blade_columns = [
-        "Φ5(관통) 날물",
-        "Φ8(관통) 날물",
-        "Φ12(관통) 날물",
-        "Φ15 날물",
-        "Φ20 날물",
-        "Φ35 날물",
-    ]
-    existing_blade_columns = [column for column in blade_columns if column in df.columns]
-    if machine_col is None or not existing_blade_columns:
+    if machine_col is None:
         return []
 
     aggregated: dict[tuple[str, str], dict[str, Any]] = {}
+    machine_start_dates: dict[str, str] = {}
+    boring_machines_seen: list[str] = []
     for _, row in df.iterrows():
         machine = normalize_machine_name(row.get(machine_col, ""))
         if not is_boring_machine(machine):
             continue
 
+        if machine not in boring_machines_seen:
+            boring_machines_seen.append(machine)
         row_date = normalize_history_date_value(row.get(date_col, "")) if date_col else ""
-        for blade_column in existing_blade_columns:
-            usage_count = parse_numeric_value(row.get(blade_column, 0))
-            if usage_count <= 0:
-                continue
-
+        if row_date:
+            current_machine_start = machine_start_dates.get(machine, "")
+            machine_start_dates[machine] = min(current_machine_start, row_date) if current_machine_start else row_date
+        for blade_column in BORING_HISTORY_BLADE_COLUMNS:
             blade_name = normalize_boring_blade_name(blade_column)
             key = (machine, blade_name)
             aggregated.setdefault(key, {"usage_count": 0.0, "start_date": ""})
+            usage_count = parse_numeric_value(row.get(blade_column, 0))
             aggregated[key]["usage_count"] += usage_count
-            if row_date:
+            if row_date and usage_count > 0:
                 current_start = str(aggregated[key]["start_date"]).strip()
                 aggregated[key]["start_date"] = min(current_start, row_date) if current_start else row_date
 
-    if not aggregated:
+    if not boring_machines_seen:
         return []
 
-    return [
-        {
-            "반영시각": sync_time,
-            "대상": "보링 전체",
-            "설비": machine,
-            "날물명": blade_name,
-            "반영 사용량(m)": "",
-            "반영 사용량(회)": round(payload["usage_count"], 3),
-            "시작일": payload["start_date"] or "",
-        }
-        for (machine, blade_name), payload in aggregated.items()
-    ]
+    entries: list[dict[str, Any]] = []
+    for machine in boring_machines_seen:
+        for blade_name in BORING_HISTORY_BLADE_NAMES:
+            payload = aggregated.get((machine, blade_name), {"usage_count": 0.0, "start_date": ""})
+            entries.append(
+                {
+                    "반영시각": sync_time,
+                    "대상": "보링 전체",
+                    "설비": machine,
+                    "날물명": blade_name,
+                    "반영 사용량(m)": "",
+                    "반영 사용량(회)": round(float(payload["usage_count"]), 3),
+                    "시작일": payload["start_date"] or machine_start_dates.get(machine, ""),
+                }
+            )
+    return entries
 
 
 def load_latest_boring_snapshot_entries() -> list[dict[str, Any]]:
@@ -1728,14 +1745,8 @@ def sync_from_google_sheet(
     df = pd.read_csv(BytesIO(response.content))
     df.columns = [str(col).replace("\ufeff", "").strip() for col in df.columns]
 
-    boring_blade_columns = [
-        "Φ5(관통) 날물",
-        "Φ8(관통) 날물",
-        "Φ12(관통) 날물",
-        "Φ15 날물",
-        "Φ20 날물",
-        "Φ35 날물",
-    ]
+    boring_blade_columns = BORING_HISTORY_BLADE_COLUMNS
+    has_boring_blade_columns = any(column in df.columns for column in boring_blade_columns)
 
     usage_col = next(
         (candidate for candidate in ["엣지사용량(m)", "총엣지사용량(m)", "usage_m", "엣지사용량", "총엣지사용량"] if candidate in df.columns),
@@ -1767,9 +1778,21 @@ def sync_from_google_sheet(
             continue
         if machine.startswith(("수직", "포인트", "런닝", "양면")):
             boring_blade_records = []
+            if has_boring_blade_columns:
+                for blade_column in boring_blade_columns:
+                    blade_usage = parse_numeric_value(row.get(blade_column, 0))
+                    boring_blade_records.append(
+                        {
+                            "machine": machine,
+                            "blade_name": normalize_boring_blade_name(blade_column),
+                            "usageM": 0.0,
+                            "usageCount": blade_usage,
+                            "prodDate": prod_date,
+                        }
+                    )
+                records.extend(boring_blade_records)
+                continue
             for blade_column in boring_blade_columns:
-                if blade_column not in df.columns:
-                    continue
                 blade_usage = parse_numeric_value(row.get(blade_column, 0))
                 if blade_usage <= 0:
                     continue
@@ -1782,9 +1805,6 @@ def sync_from_google_sheet(
                         "prodDate": prod_date,
                     }
                 )
-            if boring_blade_records:
-                records.extend(boring_blade_records)
-                continue
             if quantity_col and parsed_quantity > 0:
                 usage_count = parsed_quantity
                 usage_m = parsed_quantity

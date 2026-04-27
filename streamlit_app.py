@@ -4320,39 +4320,12 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
     with st.container(border=True):
 
-        st.markdown(
+        header_cols = st.columns([0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
+        header_labels = ["라인", "설비", "날물명", "기준값", "사용률", "잔여사용량", "예측교체", "교체상태"]
+        for col, label in zip(header_cols, header_labels):
+            col.caption(label)
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-            """
-
-            <div style="padding:14px 18px;border:1px solid #e2e8f0;border-radius:18px;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);margin-bottom:14px;box-shadow:0 8px 24px rgba(15,23,42,0.04);">
-
-              <div style="display:grid;grid-template-columns:0.8fr 1.2fr 1.4fr 1fr 1.2fr 1.1fr 1fr 1fr;gap:16px;font-size:13px;font-weight:700;color:#64748b;">
-
-                <div>라인</div>
-
-                <div>설비</div>
-
-                <div>날물명</div>
-
-                <div>기준값</div>
-
-                <div>사용률</div>
-
-                <div>잔여사용량</div>
-
-                <div>예측교체</div>
-
-                <div>교체상태</div>
-
-              </div>
-
-            </div>
-
-            """,
-
-            unsafe_allow_html=True,
-
-        )
 
 
 

@@ -31,6 +31,7 @@ import streamlit as st
 
 
 st.set_page_config(page_title="날물 교체관리 대시보드", layout="wide")
+APP_DATA_VERSION = "2026-04-28-boring-history-refresh"
 
 
 

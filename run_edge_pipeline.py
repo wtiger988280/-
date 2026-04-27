@@ -31,7 +31,7 @@ DEFAULT_BORING_MACRO_PATHS = [
     DESKTOP_DIR / "mpr 추출 매크로 (3).xlsm",
     DESKTOP_DIR / "mpr 추출 매크로 (4).xlsm",
     DESKTOP_DIR / "mpr 추출 매크로 (5).xlsm",
-    DESKTOP_DIR / "mpr ??? ?????(6).xlsm",
+    DESKTOP_DIR / "mpr 추출 매크로 (6).xlsm",
 ]
 OUTPUT_DIR = WORK_DIR / "output"
 LOG_DIR = WORK_DIR / "logs"
@@ -68,6 +68,11 @@ def extract_sync_time_from_text(value: object) -> str:
     match = re.search(r"grd_List_(\d{14})", text, flags=re.IGNORECASE)
     if not match:
         return now_kst().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        parsed = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=KST)
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def normalize_history_date_value(value: object) -> str:
@@ -83,11 +88,6 @@ def normalize_history_date_value(value: object) -> str:
         return pd.to_datetime(text, errors="coerce").strftime("%Y-%m-%d")
     except Exception:
         return text
-    try:
-        parsed = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=KST)
-        return parsed.strftime("%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
 ERP_REQUIRED_COLUMNS = {"부품코드", "색상", "부품명", "생산량"}
 ERP_STRUCTURAL_COLUMNS = {"투입구분", "투입일", "생산일", "포장일자", "계획량", "투입량"}

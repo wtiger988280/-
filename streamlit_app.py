@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, datetime
 import hashlib
@@ -415,26 +415,21 @@ def days_left(remaining: float, avg7d: float) -> int:
 
 
 def format_cycle_value(row: dict[str, Any], value: float) -> str:
-def format_cycle_value(row: dict[str, Any], value: float) -> str:
     if row["line"] == "??":
         return f"{round(value):,}m"
     return f"{value:,.0f} ?"
 
 def get_display_blade_name(row: dict[str, Any]) -> str:
-def get_display_blade_name(row: dict[str, Any]) -> str:
-    edge = "??"
-    gwantong = "(??)"
-    nalmul = " ??"
+    if row["line"] == "??":
         blade_name = str(row.get("bladeName", "")).strip()
         if blade_name:
             return blade_name
-        return "AT ?좊Ъ(?꾨㈃)"
-    if gwantong in row["bladeName"]:
+        return "AT ??(??)"
+    if "(??)" in row["bladeName"]:
         return row["bladeName"]
-    if any(token in row["bladeName"] for token in ["過5", "過8", "過12"]):
-        return row["bladeName"].replace(nalmul, "") + gwantong + nalmul
+    if any(token in row["bladeName"] for token in ["?5", "?8", "?12"]):
+        return row["bladeName"].replace(" ??", "") + "(??) ??"
     return row["bladeName"]
-
 
 def get_machine_blade_summary(machine: str, rows: list[dict[str, Any]] | None = None) -> str:
     blade_names: list[str] = []
@@ -607,13 +602,13 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
     for entry in history:
         if not isinstance(entry, dict):
             continue
-        raw_machine = str(entry.get("?ㅻ퉬", entry.get("??삵돩", ""))).strip()
-        target = str(entry.get("???, entry.get("????", ""))).strip()
-        usage_m_key = "諛섏쁺 ?ъ슜??m)" if "諛섏쁺 ?ъ슜??m)" in entry else "獄쏆꼷???m)"
-        usage_count_key = "諛섏쁺 ?ъ슜????" if "諛섏쁺 ?ъ슜????" in entry else "獄쏆꼷?????"
-        sync_at = entry.get("諛섏쁺?쒓컖", entry.get("獄쏆꼷???볦퍟", ""))
-        start_date = entry.get("?쒖옉??, entry.get("??뽰삂??", ""))
-        blade_name = entry.get("?좊Ъ紐?, entry.get("?醫듢わ쭗?", ""))
+        raw_machine = str(entry.get("??", entry.get("???", ""))).strip()
+        target = str(entry.get("??", entry.get("????", ""))).strip()
+        usage_m_key = "?? ???(m)" if "?? ???(m)" in entry else "??? ?????m)"
+        usage_count_key = "?? ???(?)" if "?? ???(?)" in entry else "??? ???????"
+        sync_at = entry.get("????", entry.get("??????", ""))
+        start_date = entry.get("???", entry.get("?????", ""))
+        blade_name = entry.get("???", entry.get("?????", ""))
         usage_m = entry.get(usage_m_key, "")
         usage_count = entry.get(usage_count_key, "")
         if not raw_machine and not target:
@@ -622,14 +617,14 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
         if not machine:
             continue
 
-        is_boring = machine.startswith(("?섏쭅", "?ъ씤??, "?곕떇", "?묐㈃", "??륁춦", "?????", "?怨뺣뻼", "?臾먦늺"))
-        is_edge = machine.startswith(("?ｌ?", "?節?"))
+        is_boring = machine.startswith(("??", "???", "??", "??"))
+        is_edge = machine.startswith(("??",))
 
         if is_boring:
-            target = "蹂대쭅 ?꾩껜"
+            target = "?? ??"
             usage_m = ""
         elif is_edge:
-            target = "?ｌ? ?꾩껜"
+            target = "?? ??"
             usage_count = ""
             blade_name = normalize_edge_blade_name(machine, blade_name)
         if is_edge and not str(blade_name).strip():
@@ -637,30 +632,29 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
 
         normalized.append(
             {
-                "諛섏쁺?쒓컖": str(sync_at).strip(),
-                "???: target,
-                "?ㅻ퉬": machine,
-                "?좊Ъ紐?: blade_name,
-                "諛섏쁺 ?ъ슜??m)": usage_m,
-                "諛섏쁺 ?ъ슜????": usage_count,
-                "?쒖옉??: start_date,
+                "????": str(sync_at).strip(),
+                "??": target,
+                "??": machine,
+                "???": blade_name,
+                "?? ???(m)": usage_m,
+                "?? ???(?)": usage_count,
+                "???": start_date,
             }
         )
     return normalized
 
-
 def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    existing_rows = normalize_sheet_sync_history(existing_history)
-    new_rows = normalize_sheet_sync_history(new_entries)
-    if not existing_rows and not new_rows:
-        return []
+    existing_rows = normalize_sheet_sync_history(existing_history if isinstance(existing_history, list) else [])
+    new_rows = normalize_sheet_sync_history(new_entries if isinstance(new_entries, list) else [])
+    if not new_rows:
+        return existing_rows
 
-    key_columns = ["諛섏쁺?쒓컖", "???, "?ㅻ퉬", "?좊Ъ紐?]
-    if new_rows:
-        replacement_keys = {
-            tuple(str(row.get(column, "")).strip() for column in key_columns)
-            for row in new_rows
-        }
+    key_columns = ["????", "??", "??", "???"]
+    replacement_keys = {
+        tuple(str(row.get(column, "")).strip() for column in key_columns)
+        for row in new_rows
+    }
+    if replacement_keys:
         existing_rows = [
             row
             for row in existing_rows
@@ -671,25 +665,24 @@ def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries
     if history_df.empty:
         return []
 
-    history_df["_sort_time"] = pd.to_datetime(history_df["諛섏쁺?쒓컖"], errors="coerce")
-    history_df = history_df.sort_values(by=["_sort_time", "諛섏쁺?쒓컖", "?ㅻ퉬", "?좊Ъ紐?], ascending=[True, True, True, True], na_position="last")
+    history_df["_sort_time"] = pd.to_datetime(history_df["????"], errors="coerce")
+    history_df = history_df.sort_values(by=["_sort_time", "????", "??", "???"], ascending=[True, True, True, True], na_position="last")
     history_df = history_df.drop(columns=["_sort_time"], errors="ignore")
     return history_df.to_dict(orient="records")
-
 
 def normalize_last_sheet_sync_details(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for entry in details:
         if not isinstance(entry, dict):
             continue
-        machine = normalize_machine_name(str(entry.get("machine", entry.get("?ㅻ퉬", entry.get("??삵돩", "")))).strip())
-        blade_name = entry.get("blade_name", entry.get("?좊Ъ紐?, entry.get("?醫듢わ쭗?", "")))
-        usage_m = entry.get("usage_m", entry.get("諛섏쁺 ?ъ슜??m)", entry.get("獄쏆꼷???m)", "")))
-        usage_count = entry.get("usage_count", entry.get("諛섏쁺 ?ъ슜????", entry.get("獄쏆꼷?????", "")))
-        start_date = entry.get("start_date", entry.get("?쒖옉??, entry.get("??뽰삂??", "")))
+        machine = normalize_machine_name(str(entry.get("machine", entry.get("??", entry.get("???", "")))).strip())
+        blade_name = entry.get("blade_name", entry.get("???", entry.get("?????", "")))
+        usage_m = entry.get("usage_m", entry.get("?? ???(m)", entry.get("??? ?????m)", "")))
+        usage_count = entry.get("usage_count", entry.get("?? ???(?)", entry.get("??? ???????", "")))
+        start_date = entry.get("start_date", entry.get("???", entry.get("?????", "")))
 
-        is_boring = machine.startswith(("?섏쭅", "?ъ씤??, "?곕떇", "?묐㈃", "??륁춦", "?????", "?怨뺣뻼", "?臾먦늺"))
-        is_edge = machine.startswith(("?ｌ?", "?節?"))
+        is_boring = machine.startswith(("??", "???", "??", "??"))
+        is_edge = machine.startswith(("??",))
 
         if is_boring:
             usage_m = ""
@@ -710,19 +703,18 @@ def normalize_last_sheet_sync_details(details: list[dict[str, Any]]) -> list[dic
         )
     return normalized
 
-
 def restore_last_sync_result_from_history() -> bool:
     history = normalize_sheet_sync_history(st.session_state.get("sheet_sync_history", []))
     if not history:
         return False
 
-    latest_sync_at = normalize_display_timestamp(history[0].get("諛섏쁺?쒓컖", ""))
+    latest_sync_at = normalize_display_timestamp(history[0].get("????", ""))
     if not latest_sync_at:
         return False
 
     latest_entries: list[dict[str, Any]] = []
     for entry in history:
-        if str(entry.get("諛섏쁺?쒓컖", "")).strip() != latest_sync_at:
+        if normalize_display_timestamp(entry.get("????", "")) != latest_sync_at:
             break
         latest_entries.append(entry)
 
@@ -733,18 +725,17 @@ def restore_last_sync_result_from_history() -> bool:
     st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(
         [
             {
-                "machine": entry.get("?ㅻ퉬", ""),
-                "blade_name": entry.get("?좊Ъ紐?, ""),
-                "usage_m": entry.get("諛섏쁺 ?ъ슜??m)", ""),
-                "usage_count": entry.get("諛섏쁺 ?ъ슜????", ""),
-                "start_date": entry.get("?쒖옉??, ""),
+                "machine": entry.get("??", ""),
+                "blade_name": entry.get("???", ""),
+                "usage_m": entry.get("?? ???(m)", ""),
+                "usage_count": entry.get("?? ???(?)", ""),
+                "start_date": entry.get("???", ""),
             }
             for entry in latest_entries
         ]
     )
     save_dashboard_state()
     return True
-
 
 def center_align_dataframe(df: pd.DataFrame):
     return df.style.set_properties(**{"text-align": "center"}).set_table_styles(
@@ -967,7 +958,7 @@ def enrich_data(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "rate": rate,
                 "remaining": remaining,
                 "remainDays": remain_days,
-                "predictedDate": "-" if remain_days == 999 else f"{remain_days}????,
+                "predictedDate": "-" if remain_days == 999 else f"{remain_days}? ?",
                 "displayStandard": format_cycle_value(row, standard),
                 "displayRemaining": format_cycle_value(row, remaining),
                 "displayBladeName": get_display_blade_name(row),

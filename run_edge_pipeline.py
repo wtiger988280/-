@@ -369,8 +369,8 @@ def load_boring_macro_table(path: Path, logger: logging.Logger) -> pd.DataFrame:
     boring = boring[boring["파일명"] != ""]
 
     numeric_sources = {
-        "5_V": ["5_V", "5_H"],
-        "8_V": ["8_V", "8_H"],
+        "5_V": ["5_V"],
+        "8_V": ["8_V"],
         "12_V": ["12_V"],
         "15_V": ["15_V"],
         "20_V": ["20_V"],

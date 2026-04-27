@@ -1639,15 +1639,15 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
     machine_reset_at = st.session_state.get("machine_reset_at", {})
 
-    for entry in history:
+    for entry in normalize_sheet_sync_history(history):
 
-        sync_at = str(entry.get("????", "")).strip()
+        sync_at = str(entry.get("\ubc18\uc601\uc2dc\uac01", "")).strip()
 
         if reset_at and sync_at and sync_at <= reset_at:
 
             continue
 
-        machine = normalize_machine_name(str(entry.get("??", "")).strip())
+        machine = str(entry.get("\uc124\ube44", "")).strip()
 
         machine_cutoff = str(machine_reset_at.get(machine, "")).strip()
 
@@ -1655,13 +1655,13 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
             continue
 
-        blade_name = str(entry.get("???", "")).strip()
+        blade_name = str(entry.get("\ub0a0\ubb3c\uba85", "")).strip()
 
-        usage_m = parse_numeric_value(entry.get("?? ???(m)", 0))
+        usage_m = parse_numeric_value(entry.get("\ubc18\uc601 \uc0ac\uc6a9\ub7c9(m)", 0))
 
-        start_date = str(entry.get("??? ????", entry.get("???", ""))).strip()
+        start_date = str(entry.get("\ub370\uc774\ud130 \uae30\uc900\uc77c\uc790", entry.get("\uc2dc\uc791\uc77c", ""))).strip()
 
-        if not machine or usage_m <= 0:
+        if not machine.startswith("\uc5e3\uc9c0") or not blade_name or usage_m <= 0:
 
             continue
 
@@ -1683,7 +1683,7 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
         key = (str(item.get("machine", "")).strip(), get_display_blade_name(item))
 
-        if item.get("line") != "??" or key not in aggregated:
+        if str(item.get("line", "")).strip() != "\uc5e3\uc9c0" or key not in aggregated:
 
             next_rows.append(item)
 
@@ -1716,19 +1716,19 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
 def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: list[dict[str, Any]], reset_at: str = "") -> list[dict[str, Any]]:
 
-    boring_entries = []
+    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
 
     machine_reset_at = st.session_state.get("machine_reset_at", {})
 
-    for entry in history:
+    for entry in normalize_sheet_sync_history(history):
 
-        sync_at = str(entry.get("????", "")).strip()
+        sync_at = str(entry.get("\ubc18\uc601\uc2dc\uac01", "")).strip()
 
         if reset_at and sync_at and sync_at <= reset_at:
 
             continue
 
-        machine = normalize_machine_name(str(entry.get("??", "")).strip())
+        machine = str(entry.get("\uc124\ube44", "")).strip()
 
         machine_cutoff = str(machine_reset_at.get(machine, "")).strip()
 
@@ -1736,57 +1736,35 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             continue
 
-        if infer_line_from_machine(machine) in {"", "??"}:
+        if not machine.startswith(("\uc218\uc9c1", "\ud3ec\uc778\ud2b8", "\ub7f0\ub2dd", "\uc591\uba74")):
 
             continue
 
-        blade_name = normalize_boring_blade_name(str(entry.get("???", "")).strip())
+        blade_name = normalize_boring_blade_name(str(entry.get("\ub0a0\ubb3c\uba85", "")).strip())
 
-        usage_count = parse_numeric_value(entry.get("?? ???(?)", 0))
+        usage_count = parse_numeric_value(entry.get("\ubc18\uc601 \uc0ac\uc6a9\ub7c9(\ud68c)", 0))
 
-        start_date = str(entry.get("??? ????", entry.get("???", ""))).strip()
+        start_date = str(entry.get("\ub370\uc774\ud130 \uae30\uc900\uc77c\uc790", entry.get("\uc2dc\uc791\uc77c", ""))).strip()
 
-        if not machine or not blade_name:
+        if not blade_name:
 
             continue
 
-        boring_entries.append(
-
-            {
-
-                "sync_at": sync_at,
-
-                "machine": machine,
-
-                "blade_name": blade_name,
-
-                "usage_count": usage_count,
-
-                "start_date": start_date,
-
-            }
-
-        )
-
-    if not boring_entries:
-
-        return data
-
-    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
-
-    for entry in boring_entries:
-
-        key = (entry["machine"], entry["blade_name"])
+        key = (machine, blade_name)
 
         aggregated.setdefault(key, {"usage": 0.0, "start_date": ""})
 
-        aggregated[key]["usage"] += entry["usage_count"]
+        aggregated[key]["usage"] += usage_count
 
-        if entry["start_date"]:
+        if start_date:
 
             current_start = aggregated[key]["start_date"]
 
-            aggregated[key]["start_date"] = min(current_start, entry["start_date"]) if current_start else entry["start_date"]
+            aggregated[key]["start_date"] = min(current_start, start_date) if current_start else start_date
+
+    if not aggregated:
+
+        return data
 
     next_rows: list[dict[str, Any]] = []
 
@@ -1794,7 +1772,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         machine = str(item.get("machine", "")).strip()
 
-        if infer_line_from_machine(machine) in {"", "??"}:
+        if not machine.startswith(("\uc218\uc9c1", "\ud3ec\uc778\ud2b8", "\ub7f0\ub2dd", "\uc591\uba74")):
 
             next_rows.append(item)
 
@@ -1804,27 +1782,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         key = (machine, blade_name)
 
-        if key not in aggregated:
-
-            next_rows.append(
-
-                {
-
-                    **item,
-
-                    "usage": 0,
-
-                    "standard": get_boring_standard(machine, blade_name),
-
-                    "avg7d": 0,
-
-                }
-
-            )
-
-            continue
-
-        total_usage = round(aggregated[key]["usage"], 3)
+        total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
 
         next_rows.append(
 
@@ -1838,7 +1796,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
                 "avg7d": max(0, round(total_usage / 7, 3)),
 
-                "installDate": aggregated[key]["start_date"] or item.get("installDate", ""),
+                "installDate": aggregated.get(key, {}).get("start_date") or item.get("installDate", ""),
 
             }
 
@@ -2909,18 +2867,25 @@ def normalize_boring_blade_name(value: Any) -> str:
 
 def get_boring_standard(machine: Any, blade_name: Any) -> int:
 
-    normalized_machine = normalize_machine_name(machine)
+    normalized_machine = str(machine or "").strip()
 
     normalized_blade = normalize_boring_blade_name(blade_name)
 
-    if normalized_machine.startswith("런닝") and normalized_blade == "Φ5(관통) 날물":
+    if normalized_blade == "\u03a65(\uad00\ud1b5) \ub0a0\ubb3c":
 
-        return 50000
+        if normalized_machine.startswith("\ub7f0\ub2dd"):
+
+            return 100000
+
+        if normalized_machine.startswith(("\uc591\uba74", "\uc218\uc9c1")):
+
+            return 50000
+
+        if normalized_machine.startswith("\ud3ec\uc778\ud2b8"):
+
+            return 75000
 
     return 10000
-
-
-
 
 
 def build_boring_history_entries_from_dataframe(df: pd.DataFrame, sync_time: str) -> list[dict[str, Any]]:
@@ -4121,9 +4086,9 @@ def get_action_label(row: dict[str, Any]) -> str:
 
     if row.get("rate", 0) >= 1:
 
-        return "??"
+        return "\uad50\uccb4"
 
-    return "??"
+    return "\uc815\uc0c1"
 
 
 
@@ -4139,13 +4104,13 @@ def render_kpis(enriched: list[dict[str, Any]]) -> None:
 
     cards = [
 
-        ("?? ??", f"{len(enriched)} EA", "??? ?? ??"),
+        ("\uad00\ub9ac \ub0a0\ubb3c", f"{len(enriched)} EA", "\uc2e4\uc2dc\uac04 \uad00\ub9ac \ub300\uc0c1"),
 
-        ("?? ??", f"{replace_now} ?", "??? ??"),
+        ("\uc989\uc2dc \uad50\uccb4", f"{replace_now} \uac74", "\uc0ac\uc6a9\ub960 \uae30\uc900"),
 
-        ("3? ? ????", f"{due_soon} ?", "??? ??"),
+        ("3\uc77c \ub0b4 \uad50\uccb4\uc608\uc815", f"{due_soon} \uac74", "\uc120\uc870\ub2ec \ud544\uc694"),
 
-        ("?? ???", f"{avg_rate}%", "?? ??"),
+        ("\ud3c9\uade0 \uc0ac\uc6a9\ub960", f"{avg_rate}%", "\ub77c\uc778 \ud3c9\uade0"),
 
     ]
 
@@ -4187,15 +4152,15 @@ def render_action_badge(status: str) -> str:
 
     if status == "replace":
 
-        label = "????"
+        label = "\uad50\uccb4\ud544\uc694"
 
     elif status == "caution":
 
-        label = "??"
+        label = "\uc8fc\uc758"
 
     else:
 
-        label = "???"
+        label = "\ubd88\ud544\uc694"
 
     styles = STATUS_STYLES[status]
 
@@ -4318,7 +4283,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
     with st.container(border=True):
 
         header_cols = st.columns([0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
-        header_labels = ["??", "??", "???", "???", "???", "?????", "????", "????"]
+        header_labels = ["\ub77c\uc778", "\uc124\ube44", "\ub0a0\ubb3c\uba85", "\uae30\uc900\uac12", "\uc0ac\uc6a9\ub960", "\uc794\uc5ec\uc0ac\uc6a9\ub7c9", "\uc608\uce21\uad50\uccb4", "\uad50\uccb4\uc0c1\ud0dc"]
         for col, label in zip(header_cols, header_labels):
             col.caption(label)
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
@@ -4328,7 +4293,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
         for row in rows:
 
-            line_label = "??" if row["line"] == "??" else "??"
+            line_label = "\uc5e3\uc9c0" if row["line"] == "\uc5e3\uc9c0" else "\ubcf4\ub9c1"
 
             with st.container(border=True):
 
@@ -4354,7 +4319,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 row_cols[6].write(row["predictedDate"])
 
-                if get_action_label(row) == "??":
+                if get_action_label(row) == "\uad50\uccb4":
 
                     button_type = "primary"
 
@@ -4518,9 +4483,9 @@ def main() -> None:
 
 
 
-    st.title("?? ???? ????")
+    st.title("\ub0a0\ubb3c \uad50\uccb4\uad00\ub9ac \ub300\uc2dc\ubcf4\ub4dc")
 
-    st.caption("FURSYS ? ?? ?? ? ?????")
+    st.caption("FURSYS ? \ucda9\uc8fc \uacf5\uc7a5 ? \ud488\uc9c8\ubcf4\uc99d\ud300")
 
 
 

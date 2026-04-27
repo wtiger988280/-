@@ -1273,6 +1273,8 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
         usage_m = pick(entry, "반영 사용량(m)", "?? ???(m)", "??? ?????m)")
         usage_count = pick(entry, "반영 사용량(회)", "?? ???(?)", "??? ???????")
         start_date = str(pick(entry, "데이터 기준일자", "시작일", "??? ????", "?????")).strip()
+        if not start_date and len(sync_at) >= 10:
+            start_date = sync_at[:10]
 
         machine = infer_legacy_machine(raw_machine, raw_blade)
         blade_name = blade_map.get(raw_blade, raw_blade)
@@ -1875,7 +1877,7 @@ def enrich_data(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         rate = row["usage"] / standard if standard else 0
 
-        remaining = max(0, standard - row["usage"])
+        remaining = 0 if standard and row["usage"] >= standard else max(0, standard - row["usage"])
 
         remain_days = days_left(remaining, row["avg7d"])
 
@@ -2871,17 +2873,17 @@ def get_boring_standard(machine: Any, blade_name: Any) -> int:
 
     normalized_blade = normalize_boring_blade_name(blade_name)
 
-    if normalized_blade == "\u03a65(\uad00\ud1b5) \ub0a0\ubb3c":
+    if normalized_blade == "Φ5(관통) 날물":
 
-        if normalized_machine.startswith("\ub7f0\ub2dd"):
+        if normalized_machine.startswith("런닝"):
 
             return 100000
 
-        if normalized_machine.startswith(("\uc591\uba74", "\uc218\uc9c1")):
+        if normalized_machine.startswith(("양면", "수직")):
 
             return 50000
 
-        if normalized_machine.startswith("\ud3ec\uc778\ud2b8"):
+        if normalized_machine.startswith("포인트"):
 
             return 75000
 
@@ -4194,7 +4196,7 @@ def render_usage_bar(rate: float, status: str) -> str:
 
         styles = STATUS_STYLES["normal"]
 
-    width = max(0, min(100, round(rate * 100)))
+    width = 100 if rate >= 1 else max(0, min(99, int(rate * 100)))
 
     return (
 
@@ -4485,7 +4487,7 @@ def main() -> None:
 
     st.title("\ub0a0\ubb3c \uad50\uccb4\uad00\ub9ac \ub300\uc2dc\ubcf4\ub4dc")
 
-    st.caption("FURSYS ? \ucda9\uc8fc \uacf5\uc7a5 ? \ud488\uc9c8\ubcf4\uc99d\ud300")
+    st.caption("FURSYS · \ucda9\uc8fc \uacf5\uc7a5 · \ud488\uc9c8\ubcf4\uc99d\ud300")
 
 
 

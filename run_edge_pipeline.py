@@ -31,6 +31,7 @@ DEFAULT_BORING_MACRO_PATHS = [
     DESKTOP_DIR / "mpr 추출 매크로 (3).xlsm",
     DESKTOP_DIR / "mpr 추출 매크로 (4).xlsm",
     DESKTOP_DIR / "mpr 추출 매크로 (5).xlsm",
+    DESKTOP_DIR / "mpr ??? ?????(6).xlsm",
 ]
 OUTPUT_DIR = WORK_DIR / "output"
 LOG_DIR = WORK_DIR / "logs"
@@ -905,6 +906,8 @@ def write_latest_upload_info_worksheet(spreadsheet, sheet_config: dict[str, str]
 
 def normalize_dashboard_machine_name(raw_value: object) -> str:
     raw = "" if raw_value is None else str(raw_value).strip()
+    if not raw or raw.lower() in {"nan", "nat", "none"}:
+        return ""
     compact = raw.replace(" ", "")
     edge_aliases = {
         "엣지밴더#1": "엣지 #1",
@@ -1171,8 +1174,28 @@ def write_sync_history_worksheet(spreadsheet, sheet_config: dict[str, str], hist
         )
         existing_df = pd.DataFrame()
 
-    combined_df = pd.concat([existing_df, history_df], ignore_index=True, sort=False)
-    combined_df = normalize_sync_history_dataframe(combined_df)
+    normalized_existing = normalize_sync_history_dataframe(existing_df)
+    normalized_new = normalize_sync_history_dataframe(history_df)
+    key_columns = [H_SYNC, H_TARGET, H_MACHINE, H_BLADE]
+
+    if normalized_new.empty:
+        combined_df = normalized_existing
+    elif normalized_existing.empty:
+        combined_df = normalized_new
+    else:
+        replacement_keys = {
+            tuple(str(row.get(column, "")).strip() for column in key_columns)
+            for _, row in normalized_new.iterrows()
+        }
+        filtered_existing = normalized_existing[
+            ~normalized_existing.apply(
+                lambda row: tuple(str(row.get(column, "")).strip() for column in key_columns) in replacement_keys,
+                axis=1,
+            )
+        ]
+        combined_df = pd.concat([filtered_existing, normalized_new], ignore_index=True, sort=False)
+        combined_df = normalize_sync_history_dataframe(combined_df)
+
     write_dataframe_to_worksheet(worksheet, combined_df)
 
 

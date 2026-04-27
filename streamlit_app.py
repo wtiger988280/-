@@ -28,7 +28,7 @@ DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
 UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
 SYNC_HISTORY_WORKSHEET_NAME = "DASHBOARD_SYNC_HISTORY"
 KST = ZoneInfo("Asia/Seoul")
-STREAMLIT_APP_REVISION = "2026-04-27 09:00"
+STREAMLIT_APP_REVISION = "2026-04-27 12:20"
 BORING_WORKSHEET_GID_BY_SYNC_TIME = {
     "2026-04-23 10:15:08": "1062250441",
     "2026-04-24 10:56:07": "1321320597",
@@ -2258,9 +2258,10 @@ def main() -> None:
         except Exception:
             pass
     auto_sync_fragment()
-    effective_history = rebuild_boring_history_from_remote(
-        st.session_state.get("sheet_sync_history", []),
-        auto_sheet_url or DEFAULT_GOOGLE_SHEET_URL,
+    # Use the persisted sync history as the single source of truth for both
+    # edge and boring so previous days' history does not get rebuilt away.
+    effective_history = normalize_sheet_sync_history(
+        st.session_state.get("sheet_sync_history", [])
     )
     if effective_history != st.session_state.get("sheet_sync_history", []):
         st.session_state.sheet_sync_history = effective_history

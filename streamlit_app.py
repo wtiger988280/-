@@ -690,7 +690,7 @@ def init_state() -> None:
 
     if "send_result" not in st.session_state:
 
-        st.session_state.send_result = saved_state.get("send_result", "")
+        st.session_state.send_result = ""
 
     if "replace_alert_history" not in st.session_state:
 
@@ -1208,96 +1208,107 @@ def save_completion_history(history: list[dict[str, Any]]) -> None:
 
 def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
+    blade_map = {
+        "?5(??) ??": "Φ5(관통) 날물",
+        "?8(??) ??": "Φ8(관통) 날물",
+        "?12(??) ??": "Φ12(관통) 날물",
+        "?15 ??": "Φ15 날물",
+        "?20 ??": "Φ20 날물",
+        "?35 ??": "Φ35 날물",
+    }
+
+    def pick(entry: dict[str, Any], *keys: str) -> Any:
+        for key in keys:
+            if key in entry:
+                return entry.get(key)
+        return ""
+
+    def is_date_like(value: str) -> bool:
+        return len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
+
+    def infer_legacy_machine(raw_machine: str, raw_blade: str) -> str:
+        compact = raw_machine.replace(" ", "")
+        digits = ''.join(ch for ch in compact if ch.isdigit())
+        if not digits:
+            return normalize_machine_name(raw_machine)
+
+        if raw_blade in blade_map or raw_blade.startswith("Φ"):
+            if "??" in raw_machine or "수직" in raw_machine:
+                return f"수직 #{digits[:1]}"
+            if "???" in raw_machine or "포인트" in raw_machine:
+                return "포인트 #3"
+            if digits in {"26", "27"}:
+                return f"양면 #{digits}"
+            if digits in {"19", "20", "21", "22", "23", "24"}:
+                return f"런닝 #{digits}"
+            if digits in {"1", "2"}:
+                return f"수직 #{digits}"
+            if digits == "3":
+                return "포인트 #3"
+
+        if is_date_like(raw_blade):
+            if digits == "1":
+                return "엣지 #1"
+            if digits == "2":
+                return "엣지 #2"
+            if digits == "3" or digits == "4":
+                return "엣지 #3,4"
+            if digits == "5":
+                return "엣지 #5"
+            if digits == "6":
+                return "엣지 #6"
+
+        return normalize_machine_name(raw_machine)
+
     normalized: list[dict[str, Any]] = []
 
     for entry in history:
-
         if not isinstance(entry, dict):
-
             continue
 
-        raw_machine = str(entry.get("설비", entry.get("?ㅻ퉬", ""))).strip()
+        sync_at = str(pick(entry, "반영시각", "????", "??????")).strip()
+        raw_machine = str(pick(entry, "설비", "??", "???")).strip()
+        raw_blade = str(pick(entry, "날물명", "???", "?????")).strip()
+        target = str(pick(entry, "대상", "????", "????")).strip()
+        usage_m = pick(entry, "반영 사용량(m)", "?? ???(m)", "??? ?????m)")
+        usage_count = pick(entry, "반영 사용량(회)", "?? ???(?)", "??? ???????")
+        start_date = str(pick(entry, "데이터 기준일자", "시작일", "??? ????", "?????")).strip()
 
-        target = str(entry.get("대상", entry.get("???", ""))).strip()
-
-        usage_m_key = "반영 사용량(m)" if "반영 사용량(m)" in entry else "諛섏쁺 ?ъ슜??m)"
-
-        usage_count_key = "반영 사용량(회)" if "반영 사용량(회)" in entry else "諛섏쁺 ?ъ슜????"
-
-        sync_at = entry.get("반영시각", entry.get("諛섏쁺?쒓컖", ""))
-
-        start_date = entry.get("시작일", entry.get("?쒖옉??", ""))
-
-        blade_name = entry.get("날물명", entry.get("?좊Ъ紐?", ""))
-
-        usage_m = entry.get(usage_m_key, "")
-
-        usage_count = entry.get(usage_count_key, "")
-
-        if not raw_machine and not target:
-
-            continue
-
-        machine = normalize_machine_name(raw_machine)
+        machine = infer_legacy_machine(raw_machine, raw_blade)
+        blade_name = blade_map.get(raw_blade, raw_blade)
 
         if not machine:
-
             continue
 
-
-
-        is_boring = machine.startswith(("수직", "포인트", "런닝", "양면", "?섏쭅", "?ъ씤??", "?곕떇", "?묐㈃"))
-
-        is_edge = machine.startswith(("엣지", "?ｌ?"))
-
-
+        is_boring = machine.startswith(("수직", "포인트", "런닝", "양면"))
+        is_edge = machine.startswith("엣지")
 
         if is_boring:
-
             target = "보링 전체"
-
             usage_m = ""
-
+            blade_name = normalize_boring_blade_name(blade_name)
         elif is_edge:
-
             target = "엣지 전체"
-
             usage_count = ""
-
+            if is_date_like(blade_name):
+                blade_name = ""
             blade_name = normalize_edge_blade_name(machine, blade_name)
+            if not str(blade_name).strip():
+                blade_name = get_machine_blade_summary(machine, INITIAL_RAW_DATA)
+        else:
+            continue
 
-        if is_edge and not str(blade_name).strip():
-
-            blade_name = get_machine_blade_summary(machine, INITIAL_RAW_DATA)
-
-
-
-        normalized.append(
-
-            {
-
-                "반영시각": str(sync_at).strip(),
-
-                "대상": target,
-
-                "설비": machine,
-
-                "날물명": blade_name,
-
-                "반영 사용량(m)": usage_m,
-
-                "반영 사용량(회)": usage_count,
-
-                "시작일": start_date,
-
-            }
-
-        )
+        normalized.append({
+            "반영시각": sync_at,
+            "대상": target,
+            "설비": machine,
+            "날물명": blade_name,
+            "반영 사용량(m)": usage_m,
+            "반영 사용량(회)": usage_count,
+            "데이터 기준일자": start_date,
+        })
 
     return normalized
-
-
-
 
 
 def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1630,13 +1641,13 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
     for entry in history:
 
-        sync_at = str(entry.get("????", entry.get("??????", ""))).strip()
+        sync_at = str(entry.get("????", "")).strip()
 
         if reset_at and sync_at and sync_at <= reset_at:
 
             continue
 
-        machine = normalize_machine_name(str(entry.get("??", entry.get("???", ""))).strip())
+        machine = normalize_machine_name(str(entry.get("??", "")).strip())
 
         machine_cutoff = str(machine_reset_at.get(machine, "")).strip()
 
@@ -1644,11 +1655,11 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
             continue
 
-        blade_name = str(entry.get("???", entry.get("?????", ""))).strip()
+        blade_name = str(entry.get("???", "")).strip()
 
-        usage_m = parse_numeric_value(entry.get("?? ???(m)", entry.get("??? ?????m)", 0)))
+        usage_m = parse_numeric_value(entry.get("?? ???(m)", 0))
 
-        start_date = str(entry.get("???", entry.get("?????", ""))).strip()
+        start_date = str(entry.get("??? ????", entry.get("???", ""))).strip()
 
         if not machine or usage_m <= 0:
 
@@ -1665,8 +1676,6 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
             current_start = aggregated[key]["start_date"]
 
             aggregated[key]["start_date"] = min(current_start, start_date) if current_start else start_date
-
-
 
     next_rows: list[dict[str, Any]] = []
 
@@ -1705,7 +1714,6 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
     return next_rows
 
 
-
 def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: list[dict[str, Any]], reset_at: str = "") -> list[dict[str, Any]]:
 
     boring_entries = []
@@ -1714,13 +1722,13 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
     for entry in history:
 
-        sync_at = str(entry.get("????", entry.get("??????", ""))).strip()
+        sync_at = str(entry.get("????", "")).strip()
 
         if reset_at and sync_at and sync_at <= reset_at:
 
             continue
 
-        machine = normalize_machine_name(str(entry.get("??", entry.get("???", ""))).strip())
+        machine = normalize_machine_name(str(entry.get("??", "")).strip())
 
         machine_cutoff = str(machine_reset_at.get(machine, "")).strip()
 
@@ -1732,11 +1740,11 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             continue
 
-        blade_name = normalize_boring_blade_name(str(entry.get("???", entry.get("?????", ""))).strip())
+        blade_name = normalize_boring_blade_name(str(entry.get("???", "")).strip())
 
-        usage_count = parse_numeric_value(entry.get("?? ???(?)", entry.get("??? ???????", 0)))
+        usage_count = parse_numeric_value(entry.get("?? ???(?)", 0))
 
-        start_date = str(entry.get("???", entry.get("?????", ""))).strip()
+        start_date = str(entry.get("??? ????", entry.get("???", ""))).strip()
 
         if not machine or not blade_name:
 
@@ -1760,13 +1768,9 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         )
 
-
-
     if not boring_entries:
 
         return data
-
-
 
     aggregated: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -1784,8 +1788,6 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             aggregated[key]["start_date"] = min(current_start, entry["start_date"]) if current_start else entry["start_date"]
 
-
-
     next_rows: list[dict[str, Any]] = []
 
     for item in data:
@@ -1797,8 +1799,6 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
             next_rows.append(item)
 
             continue
-
-
 
         blade_name = normalize_boring_blade_name(get_display_blade_name(item))
 
@@ -1824,8 +1824,6 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             continue
 
-
-
         total_usage = round(aggregated[key]["usage"], 3)
 
         next_rows.append(
@@ -1847,7 +1845,6 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
         )
 
     return next_rows
-
 
 
 def refresh_auto_sheet_target() -> dict[str, str]:
@@ -4124,9 +4121,9 @@ def get_action_label(row: dict[str, Any]) -> str:
 
     if row.get("rate", 0) >= 1:
 
-        return "교체"
+        return "??"
 
-    return "정상"
+    return "??"
 
 
 
@@ -4142,13 +4139,13 @@ def render_kpis(enriched: list[dict[str, Any]]) -> None:
 
     cards = [
 
-        ("관리 날물", f"{len(enriched)} EA", "실시간 관리 대상"),
+        ("?? ??", f"{len(enriched)} EA", "??? ?? ??"),
 
-        ("즉시 교체", f"{replace_now} 건", "사용률 기준"),
+        ("?? ??", f"{replace_now} ?", "??? ??"),
 
-        ("3일 내 교체예정", f"{due_soon} 건", "선조달 필요"),
+        ("3? ? ????", f"{due_soon} ?", "??? ??"),
 
-        ("평균 사용률", f"{avg_rate}%", "라인 평균"),
+        ("?? ???", f"{avg_rate}%", "?? ??"),
 
     ]
 
@@ -4190,15 +4187,15 @@ def render_action_badge(status: str) -> str:
 
     if status == "replace":
 
-        label = "교체필요"
+        label = "????"
 
     elif status == "caution":
 
-        label = "주의"
+        label = "??"
 
     else:
 
-        label = "불필요"
+        label = "???"
 
     styles = STATUS_STYLES[status]
 
@@ -4321,7 +4318,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
     with st.container(border=True):
 
         header_cols = st.columns([0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
-        header_labels = ["라인", "설비", "날물명", "기준값", "사용률", "잔여사용량", "예측교체", "교체상태"]
+        header_labels = ["??", "??", "???", "???", "???", "?????", "????", "????"]
         for col, label in zip(header_cols, header_labels):
             col.caption(label)
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
@@ -4331,7 +4328,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
         for row in rows:
 
-            line_label = "엣지" if row["line"] == "엣지" else "보링"
+            line_label = "??" if row["line"] == "??" else "??"
 
             with st.container(border=True):
 
@@ -4357,7 +4354,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 row_cols[6].write(row["predictedDate"])
 
-                if get_action_label(row) == "교체":
+                if get_action_label(row) == "??":
 
                     button_type = "primary"
 
@@ -4521,9 +4518,9 @@ def main() -> None:
 
 
 
-    st.title("날물 교체관리 대시보드")
+    st.title("?? ???? ????")
 
-    st.caption("FURSYS · 충주 공장 · 품질보증팀")
+    st.caption("FURSYS ? ?? ?? ? ?????")
 
 
 

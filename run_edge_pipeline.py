@@ -1133,14 +1133,21 @@ def normalize_sync_history_dataframe(history_df: pd.DataFrame) -> pd.DataFrame:
     normalized[H_BASE_DATE] = normalized[H_BASE_DATE].fillna("").astype(str).str.strip().apply(normalize_history_date_value)
     normalized[H_USAGE_M] = pd.to_numeric(normalized[H_USAGE_M], errors="coerce")
     normalized[H_USAGE_C] = pd.to_numeric(normalized[H_USAGE_C], errors="coerce")
+    normalized = (
+        normalized.groupby([H_SYNC, H_TARGET, H_MACHINE, H_BLADE], dropna=False, as_index=False)
+        .agg(
+            {
+                H_USAGE_M: "sum",
+                H_USAGE_C: "sum",
+                H_BASE_DATE: lambda values: min([value for value in values if str(value).strip()]) if any(str(value).strip() for value in values) else "",
+            }
+        )
+    )
     normalized["_sort_time"] = pd.to_datetime(normalized[H_SYNC], errors="coerce")
-    normalized = normalized.sort_values(by=["_sort_time", H_SYNC], ascending=[True, True], na_position="last")
-
-    dedupe_keys = [H_SYNC, H_TARGET, H_MACHINE, H_BLADE, H_USAGE_M, H_USAGE_C, H_BASE_DATE]
-    normalized = normalized.drop_duplicates(subset=dedupe_keys, keep="first")
+    normalized = normalized.sort_values(by=["_sort_time", H_SYNC, H_MACHINE, H_BLADE], ascending=[True, True, True, True], na_position="last")
     normalized = normalized.drop(columns=["_sort_time"], errors="ignore")
     normalized[H_USAGE_M] = normalized[H_USAGE_M].apply(
-        lambda value: "" if pd.isna(value) else round(float(value), 3)
+        lambda value: "" if pd.isna(value) or abs(float(value)) < 1e-9 else round(float(value), 3)
     )
     normalized[H_USAGE_C] = normalized[H_USAGE_C].apply(
         lambda value: "" if pd.isna(value) else int(round(float(value)))

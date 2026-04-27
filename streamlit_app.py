@@ -240,6 +240,7 @@ def reset_all_usage_data() -> None:
     st.session_state.last_sheet_sync_at = ""
     st.session_state.last_applied_upload_at = st.session_state.get("auto_sheet_updated_at", "")
     st.session_state.usage_reset_at = reset_at
+    st.session_state.machine_reset_at = {}
     st.session_state.upload_summary = None
     st.session_state.send_result = "설비 사용률을 모두 리셋했습니다."
     save_dashboard_state()
@@ -359,6 +360,9 @@ def init_state() -> None:
     if "completion_history" not in st.session_state:
         raw_completion = saved_state.get("completion_history", load_completion_history())
         st.session_state.completion_history = raw_completion if isinstance(raw_completion, list) else []
+    if "machine_reset_at" not in st.session_state:
+        raw_machine_reset_at = saved_state.get("machine_reset_at", {})
+        st.session_state.machine_reset_at = raw_machine_reset_at if isinstance(raw_machine_reset_at, dict) else {}
     if "sheet_sync_hashes" not in st.session_state:
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
     if "teams_webhook_url" not in st.session_state:
@@ -646,51 +650,31 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
 
 
 def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    combined_history = normalize_sheet_sync_history([*existing_history, *new_entries])
-    if not combined_history:
+    existing_rows = normalize_sheet_sync_history(existing_history)
+    new_rows = normalize_sheet_sync_history(new_entries)
+    if not existing_rows and not new_rows:
         return []
 
-    history_df = pd.DataFrame(combined_history)
-    expected_columns = ["반영시각", "대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
-    history_df = history_df.rename(
-        columns={
-            "諛섏쁺?쒓컖": "반영시각",
-            "???": "대상",
-            "?ㅻ퉬": "설비",
-            "?좊Ъ紐?": "날물명",
-            "諛섏쁺 ?ъ슜??m)": "반영 사용량(m)",
-            "諛섏쁺 ?ъ슜????": "반영 사용량(회)",
-            "?쒖옉??": "시작일",
+    key_columns = ["반영시각", "대상", "설비", "날물명"]
+    if new_rows:
+        replacement_keys = {
+            tuple(str(row.get(column, "")).strip() for column in key_columns)
+            for row in new_rows
         }
-    )
-    history_df = history_df.loc[:, ~history_df.columns.duplicated()]
-    for column in expected_columns:
-        if column not in history_df.columns:
-            history_df[column] = ""
-    history_df = history_df[expected_columns]
-    history_df["반영시각"] = history_df["반영시각"].fillna("").astype(str).str.strip()
-    history_df["대상"] = history_df["대상"].fillna("").astype(str).str.strip()
-    history_df["설비"] = history_df["설비"].fillna("").astype(str).str.strip()
-    history_df["날물명"] = history_df["날물명"].fillna("").astype(str).str.strip()
-    history_df["시작일"] = history_df["시작일"].fillna("").astype(str).str.strip().apply(normalize_history_date_value)
-    history_df["반영 사용량(m)"] = pd.to_numeric(history_df["반영 사용량(m)"], errors="coerce")
-    history_df["반영 사용량(회)"] = pd.to_numeric(history_df["반영 사용량(회)"], errors="coerce")
-    history_df = (
-        history_df.groupby(["반영시각", "대상", "설비", "날물명"], dropna=False, as_index=False)
-        .agg(
-            {
-                "반영 사용량(m)": "sum",
-                "반영 사용량(회)": "sum",
-                "시작일": lambda values: min([value for value in values if str(value).strip()]) if any(str(value).strip() for value in values) else "",
-            }
-        )
-    )
+        existing_rows = [
+            row
+            for row in existing_rows
+            if tuple(str(row.get(column, "")).strip() for column in key_columns) not in replacement_keys
+        ]
+
+    history_df = pd.DataFrame([*existing_rows, *new_rows])
+    if history_df.empty:
+        return []
+
     history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
     history_df = history_df.sort_values(by=["_sort_time", "반영시각", "설비", "날물명"], ascending=[True, True, True, True], na_position="last")
     history_df = history_df.drop(columns=["_sort_time"], errors="ignore")
-    history_df["반영 사용량(m)"] = history_df["반영 사용량(m)"].apply(lambda value: "" if pd.isna(value) or abs(float(value)) < 1e-9 else round(float(value), 3))
-    history_df["반영 사용량(회)"] = history_df["반영 사용량(회)"].apply(lambda value: "" if pd.isna(value) else int(round(float(value))))
-    return normalize_sheet_sync_history(history_df.to_dict(orient="records"))
+    return history_df.to_dict(orient="records")
 
 
 def normalize_last_sheet_sync_details(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -819,6 +803,7 @@ def save_dashboard_state() -> None:
         "last_snapshot_sync_key": st.session_state.get("last_snapshot_sync_key", ""),
         "boring_snapshot_loaded_key": st.session_state.get("boring_snapshot_loaded_key", ""),
         "usage_reset_at": st.session_state.get("usage_reset_at", ""),
+        "machine_reset_at": st.session_state.get("machine_reset_at", {}),
         "line_filter_toggle": st.session_state.get("line_filter_toggle", "all"),
         "line_machine_filter": st.session_state.get("line_machine_filter", "전체"),
     }
@@ -827,14 +812,18 @@ def save_dashboard_state() -> None:
 
 def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[dict[str, Any]], reset_at: str = "") -> list[dict[str, Any]]:
     aggregated: dict[tuple[str, str], dict[str, Any]] = {}
+    machine_reset_at = st.session_state.get("machine_reset_at", {})
     for entry in history:
-        sync_at = str(entry.get("반영시각", "")).strip()
+        sync_at = str(entry.get("????", entry.get("??????", ""))).strip()
         if reset_at and sync_at and sync_at <= reset_at:
             continue
-        machine = normalize_machine_name(str(entry.get("설비", "")).strip())
-        blade_name = str(entry.get("날물명", "")).strip()
-        usage_m = parse_numeric_value(entry.get("반영 사용량(m)", 0))
-        start_date = str(entry.get("시작일", "")).strip()
+        machine = normalize_machine_name(str(entry.get("??", entry.get("???", ""))).strip())
+        machine_cutoff = str(machine_reset_at.get(machine, "")).strip()
+        if machine_cutoff and sync_at and sync_at <= machine_cutoff:
+            continue
+        blade_name = str(entry.get("???", entry.get("?????", ""))).strip()
+        usage_m = parse_numeric_value(entry.get("?? ???(m)", entry.get("??? ?????m)", 0)))
+        start_date = str(entry.get("???", entry.get("?????", ""))).strip()
         if not machine or usage_m <= 0:
             continue
         key = (machine, blade_name)
@@ -847,7 +836,7 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
     next_rows: list[dict[str, Any]] = []
     for item in data:
         key = (str(item.get("machine", "")).strip(), get_display_blade_name(item))
-        if item.get("line") != "엣지" or key not in aggregated:
+        if item.get("line") != "??" or key not in aggregated:
             next_rows.append(item)
             continue
         total_usage = round(aggregated[key]["usage"], 3)
@@ -863,21 +852,22 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
         )
     return next_rows
 
-
 def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: list[dict[str, Any]], reset_at: str = "") -> list[dict[str, Any]]:
     boring_entries = []
+    machine_reset_at = st.session_state.get("machine_reset_at", {})
     for entry in history:
-        sync_at = str(entry.get("반영시각", "")).strip()
+        sync_at = str(entry.get("????", entry.get("??????", ""))).strip()
         if reset_at and sync_at and sync_at <= reset_at:
             continue
-        machine = normalize_machine_name(str(entry.get("설비", "")).strip())
-        if infer_line_from_machine(machine) == "":
+        machine = normalize_machine_name(str(entry.get("??", entry.get("???", ""))).strip())
+        machine_cutoff = str(machine_reset_at.get(machine, "")).strip()
+        if machine_cutoff and sync_at and sync_at <= machine_cutoff:
             continue
-        if infer_line_from_machine(machine) == "엣지":
+        if infer_line_from_machine(machine) in {"", "??"}:
             continue
-        blade_name = normalize_boring_blade_name(str(entry.get("날물명", "")).strip())
-        usage_count = parse_numeric_value(entry.get("반영 사용량(회)", 0))
-        start_date = str(entry.get("시작일", "")).strip()
+        blade_name = normalize_boring_blade_name(str(entry.get("???", entry.get("?????", ""))).strip())
+        usage_count = parse_numeric_value(entry.get("?? ???(?)", entry.get("??? ???????", 0)))
+        start_date = str(entry.get("???", entry.get("?????", ""))).strip()
         if not machine or not blade_name:
             continue
         boring_entries.append(
@@ -905,7 +895,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
     next_rows: list[dict[str, Any]] = []
     for item in data:
         machine = str(item.get("machine", "")).strip()
-        if infer_line_from_machine(machine) == "" or infer_line_from_machine(machine) == "엣지":
+        if infer_line_from_machine(machine) in {"", "??"}:
             next_rows.append(item)
             continue
 
@@ -928,12 +918,11 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
                 **item,
                 "usage": total_usage,
                 "standard": get_boring_standard(machine, blade_name),
-                "avg7d": max(1, round(total_usage / 7, 3)) if total_usage > 0 else 0,
+                "avg7d": max(0, round(total_usage / 7, 3)),
                 "installDate": aggregated[key]["start_date"] or item.get("installDate", ""),
             }
         )
     return next_rows
-
 
 def refresh_auto_sheet_target() -> dict[str, str]:
     latest_info = load_latest_upload_info()
@@ -2029,11 +2018,16 @@ def handle_action(row_id: int) -> None:
     selected_item = next((item for item in st.session_state.equipment_data if item["id"] == row_id), None)
     if selected_item is None:
         return
+    if parse_numeric_value(selected_item.get("usage", 0)) <= 0 or selected_item.get("rate", 0) < 1:
+        st.session_state.send_result = f"{selected_item['machine']} ??? ?? ?? ??? ????."
+        save_dashboard_state()
+        return
 
     today = date.today().isoformat()
     selected_machine = selected_item["machine"]
     completed_usage = parse_numeric_value(selected_item.get("usage", 0))
     completed_usage_label = format_cycle_value(selected_item, completed_usage)
+    completed_at = now_kst().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.equipment_data = [
         {
             **item,
@@ -2045,34 +2039,25 @@ def handle_action(row_id: int) -> None:
         for item in st.session_state.equipment_data
     ]
     st.session_state.replace_alert_history.pop(selected_machine, None)
-    st.session_state.sheet_sync_history = [
-        entry
-        for entry in st.session_state.get("sheet_sync_history", [])
-        if normalize_machine_name(str(entry.get("설비", entry.get("?ㅻ퉬", ""))).strip()) != selected_machine
-    ]
-    save_sheet_sync_history(st.session_state.sheet_sync_history)
-    st.session_state.last_sheet_sync_details = [
-        detail
-        for detail in st.session_state.get("last_sheet_sync_details", [])
-        if normalize_machine_name(str(detail.get("machine", detail.get("설비", ""))).strip()) != selected_machine
-    ]
+    machine_reset_at = st.session_state.get("machine_reset_at", {})
+    machine_reset_at[selected_machine] = completed_at
+    st.session_state.machine_reset_at = machine_reset_at
     completion_entry = {
-        "교체완료시각": now_kst().strftime("%Y-%m-%d %H:%M:%S"),
-        "설비": selected_item["machine"],
-        "날물명": get_display_blade_name(selected_item),
-        "교체 시점 사용량": completed_usage_label,
+        "??????": completed_at,
+        "??": selected_item["machine"],
+        "???": get_display_blade_name(selected_item),
+        "?? ?? ???": completed_usage_label,
     }
     st.session_state.completion_history = [completion_entry, *st.session_state.get("completion_history", [])]
-    message = f"{selected_item['machine']} 교체 완료 처리되었습니다."
+    message = f"{selected_item['machine']} ?? ?? ???????."
     try:
         send_teams_complete_alert(selected_item)
-        message += " Teams 알림도 전송했습니다."
+        message += " Teams ??? ??????."
     except Exception as exc:
-        message += f" Teams 알림 전송 실패: {exc}"
+        message += f" Teams ?? ?? ??: {exc}"
     st.session_state.send_result = message
     save_completion_history(st.session_state.get("completion_history", []))
     save_dashboard_state()
-
 
 def get_action_label(row: dict[str, Any]) -> str:
     if row.get("rate", 0) >= 1:

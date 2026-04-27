@@ -28,12 +28,34 @@ DEFAULT_MAPPING = WORK_DIR / "edge_mapping.xlsx"
 DEFAULT_BORING_MACRO_PATHS = [
     DESKTOP_DIR / "mpr 추출 매크로 보링.xlsm",
     DESKTOP_DIR / "mpr 추출 매크로 (2).xlsm",
+    DESKTOP_DIR / "mpr 추출 매크로 (3).xlsm",
+    DESKTOP_DIR / "mpr 추출 매크로 (4).xlsm",
+    DESKTOP_DIR / "mpr 추출 매크로 (5).xlsm",
 ]
 OUTPUT_DIR = WORK_DIR / "output"
 LOG_DIR = WORK_DIR / "logs"
 DEBUG_LOG_PATH = LOG_DIR / "edge_pipeline.log"
 LATEST_UPLOAD_INFO_PATH = LOG_DIR / "latest_sheet_upload.json"
 KST = ZoneInfo("Asia/Seoul")
+TEXT_EDGE = "\uc5e3\uc9c0"
+TEXT_BORING = "\ubcf4\ub9c1"
+COL_MACHINE = "\uc124\ube44\uba85"
+COL_MACHINE_ALT = "\uc124\ube44\uba85\u25bc"
+COL_VENDOR = "\uc2e4\uc801\ub4f1\ub85d\ucc98"
+COL_PARTNER = "\ud611\ub825\uc0ac"
+COL_DATE = "\uc0dd\uc0b0\uc77c"
+COL_WORK_DATE = "\uc791\uc5c5\uc77c"
+COL_MATERIAL = "\uc7ac\uc9c8"
+COL_MATERIAL_ALT = "\uc7ac\uc9c8\u25b2"
+COL_EDGE_USAGE = "\uc5e3\uc9c0\uc0ac\uc6a9\ub7c9(m)"
+COL_EDGE_USAGE_TOTAL = "\ucd1d\uc5e3\uc9c0\uc0ac\uc6a9\ub7c9(m)"
+H_SYNC = "\ubc18\uc601\uc2dc\uac01"
+H_TARGET = "\ub300\uc0c1"
+H_MACHINE = "\uc124\ube44"
+H_BLADE = "\ub0a0\ubb3c\uba85"
+H_USAGE_M = "\ubc18\uc601 \uc0ac\uc6a9\ub7c9(m)"
+H_USAGE_C = "\ubc18\uc601 \uc0ac\uc6a9\ub7c9(\ud68c)"
+H_BASE_DATE = "\uc2dc\uc791\uc77c"
 
 
 def now_kst() -> datetime:
@@ -325,6 +347,14 @@ def pick_existing_column(columns: list[str], *candidates: str) -> str | None:
     for candidate in candidates:
         if candidate in columns:
             return candidate
+    return None
+
+
+def pick_column_by_keywords(columns: list[str], *keywords: str) -> str | None:
+    for column in columns:
+        text = "" if column is None else str(column)
+        if all(keyword in text for keyword in keywords):
+            return column
     return None
 
 
@@ -796,15 +826,20 @@ def build_worksheet_title(erp_path: Path, requested_name: str | None = None) -> 
 
 
 def detect_dataset_type(df: pd.DataFrame) -> str:
-    equipment_column = pick_existing_column(list(df.columns), "설비명▼", "설비명", "협력사")
+    columns = list(df.columns)
+    equipment_column = (
+        pick_existing_column(columns, COL_MACHINE_ALT, COL_MACHINE, COL_PARTNER)
+        or pick_column_by_keywords(columns, COL_MACHINE)
+        or pick_column_by_keywords(columns, COL_PARTNER)
+    )
     if not equipment_column:
-        return "미확인"
+        return "\ubbf8\ud655\uc778"
     equipment_series = df[equipment_column].fillna("").astype(str).str.replace(" ", "", regex=False)
-    if equipment_series.str.contains("엣지밴더|신규엣지밴더|더블엣지밴더", regex=True).any():
-        return "엣지"
-    if equipment_series.str.contains("보링", regex=False).any():
-        return "보링"
-    return "미확인"
+    if equipment_series.str.contains("\uc5e3\uc9c0\ubc34\ub354|\uc2e0\uaddc\uc5e3\uc9c0\ubc34\ub354|\ub354\ube14\uc5e3\uc9c0\ubc34\ub354", regex=True).any():
+        return TEXT_EDGE
+    if equipment_series.str.contains(TEXT_BORING, regex=False).any():
+        return TEXT_BORING
+    return "\ubbf8\ud655\uc778"
 
 
 def create_unique_worksheet(spreadsheet, base_title: str, row_count: int, col_count: int):
@@ -903,11 +938,37 @@ def normalize_dashboard_machine_name(raw_value: object) -> str:
 def build_sync_history_entries(result_df: pd.DataFrame, dataset_type: str, source_label: str = "") -> pd.DataFrame:
     sync_time = extract_sync_time_from_text(source_label)
     entries: list[dict[str, object]] = []
-    equipment_column = pick_existing_column(list(result_df.columns), "설비명▼", "설비명", "실적등록처")
-    date_column = pick_existing_column(list(result_df.columns), "생산일", "작업일")
-    material_column = pick_existing_column(list(result_df.columns), "재질", "재질▲")
+    columns = list(result_df.columns)
+    equipment_column = (
+        pick_existing_column(columns, COL_MACHINE_ALT, COL_MACHINE, COL_VENDOR)
+        or pick_column_by_keywords(columns, COL_MACHINE)
+        or pick_column_by_keywords(columns, COL_VENDOR)
+        or (columns[11] if len(columns) > 11 else None)
+    )
+    date_column = (
+        pick_existing_column(columns, COL_DATE, COL_WORK_DATE)
+        or pick_column_by_keywords(columns, COL_DATE)
+        or pick_column_by_keywords(columns, COL_WORK_DATE)
+        or (columns[4] if len(columns) > 4 else None)
+    )
+    material_column = (
+        pick_existing_column(columns, COL_MATERIAL, COL_MATERIAL_ALT)
+        or pick_column_by_keywords(columns, COL_MATERIAL)
+        or (columns[30] if len(columns) > 30 else None)
+    )
+    edge_usage_column = pick_existing_column(
+        columns,
+        COL_EDGE_USAGE,
+        COL_EDGE_USAGE_TOTAL,
+    ) or pick_column_by_keywords(columns, "\uc5e3\uc9c0\uc0ac\uc6a9\ub7c9")
+    boring_blade_columns = [column for column in BORING_BLADE_COLUMNS if column in columns]
+    if not boring_blade_columns and len(columns) >= 6:
+        trailing_columns = columns[-6:]
+        if all(str(column).startswith("Φ") for column in trailing_columns):
+            boring_blade_columns = trailing_columns
+    is_boring_sheet = len(boring_blade_columns) == 6
 
-    if dataset_type == "보링":
+    if is_boring_sheet:
         if not equipment_column:
             return pd.DataFrame()
         boring_machines_seen: list[tuple[str, str]] = []
@@ -920,44 +981,44 @@ def build_sync_history_entries(result_df: pd.DataFrame, dataset_type: str, sourc
             machine_key = (machine, base_date)
             if machine_key not in boring_machines_seen:
                 boring_machines_seen.append(machine_key)
-            for blade_column in BORING_BLADE_COLUMNS:
+            for blade_column in boring_blade_columns:
                 blade_usage = pd.to_numeric(pd.Series([row.get(blade_column, 0)]), errors="coerce").fillna(0).iloc[0]
                 aggregate_key = (machine, blade_column, base_date)
                 aggregated.setdefault(
                     aggregate_key,
                     {
-                        "반영시각": sync_time,
-                        "대상": "보링 전체",
-                        "설비": machine,
-                        "날물명": blade_column,
-                        "반영 사용량(m)": "",
-                        "반영 사용량(회)": 0,
-                        "시작일": base_date,
+                        H_SYNC: sync_time,
+                        H_TARGET: "\ubcf4\ub9c1 \uc804\uccb4",
+                        H_MACHINE: machine,
+                        H_BLADE: blade_column,
+                        H_USAGE_M: "",
+                        H_USAGE_C: 0,
+                        H_BASE_DATE: base_date,
                     },
                 )
-                aggregated[aggregate_key]["반영 사용량(회)"] = int(round(float(aggregated[aggregate_key]["반영 사용량(회)"]))) + int(round(float(blade_usage)))
+                aggregated[aggregate_key][H_USAGE_C] = int(round(float(aggregated[aggregate_key][H_USAGE_C]))) + int(round(float(blade_usage)))
         for machine, base_date in boring_machines_seen:
-            for blade_column in BORING_BLADE_COLUMNS:
+            for blade_column in boring_blade_columns:
                 aggregate_key = (machine, blade_column, base_date)
                 payload = aggregated.setdefault(
                     aggregate_key,
                     {
-                        "반영시각": sync_time,
-                        "대상": "보링 전체",
-                        "설비": machine,
-                        "날물명": blade_column,
-                        "반영 사용량(m)": "",
-                        "반영 사용량(회)": 0,
-                        "시작일": base_date,
+                        H_SYNC: sync_time,
+                        H_TARGET: "\ubcf4\ub9c1 \uc804\uccb4",
+                        H_MACHINE: machine,
+                        H_BLADE: blade_column,
+                        H_USAGE_M: "",
+                        H_USAGE_C: 0,
+                        H_BASE_DATE: base_date,
                     },
                 )
                 entries.append(payload)
     else:
-        if not equipment_column or "엣지사용량(m)" not in result_df.columns:
+        if not equipment_column or not edge_usage_column:
             return pd.DataFrame()
         for _, row in result_df.iterrows():
             machine = normalize_dashboard_machine_name(row.get(equipment_column, ""))
-            usage_m = pd.to_numeric(pd.Series([row.get("엣지사용량(m)", 0)]), errors="coerce").fillna(0).iloc[0]
+            usage_m = pd.to_numeric(pd.Series([row.get(edge_usage_column, 0)]), errors="coerce").fillna(0).iloc[0]
             if not machine or usage_m <= 0:
                 continue
             base_date = str(row.get(date_column, "")).strip() if date_column else ""
@@ -970,37 +1031,37 @@ def build_sync_history_entries(result_df: pd.DataFrame, dataset_type: str, sourc
                     if front_total > 0:
                         entries.append(
                             {
-                                "반영시각": sync_time,
-                                "대상": "엣지 전체",
-                                "설비": machine,
-                                "날물명": "AT 날물(전면)",
-                                "반영 사용량(m)": round(float(usage_m) * front_total / total, 3),
-                                "반영 사용량(회)": "",
-                                "시작일": base_date,
+                                H_SYNC: sync_time,
+                                H_TARGET: "\uc5e3\uc9c0 \uc804\uccb4",
+                                H_MACHINE: machine,
+                                H_BLADE: "AT 날물(전면)",
+                                H_USAGE_M: round(float(usage_m) * front_total / total, 3),
+                                H_USAGE_C: "",
+                                H_BASE_DATE: base_date,
                             }
                         )
                     if back_total > 0:
                         entries.append(
                             {
-                                "반영시각": sync_time,
-                                "대상": "엣지 전체",
-                                "설비": machine,
-                                "날물명": "AT 날물(후면)",
-                                "반영 사용량(m)": round(float(usage_m) * back_total / total, 3),
-                                "반영 사용량(회)": "",
-                                "시작일": base_date,
+                                H_SYNC: sync_time,
+                                H_TARGET: "\uc5e3\uc9c0 \uc804\uccb4",
+                                H_MACHINE: machine,
+                                H_BLADE: "AT 날물(후면)",
+                                H_USAGE_M: round(float(usage_m) * back_total / total, 3),
+                                H_USAGE_C: "",
+                                H_BASE_DATE: base_date,
                             }
                         )
                     continue
             entries.append(
                 {
-                    "반영시각": sync_time,
-                    "대상": "엣지 전체",
-                    "설비": machine,
-                    "날물명": "AT 날물(후면)",
-                    "반영 사용량(m)": round(float(usage_m), 3),
-                    "반영 사용량(회)": "",
-                    "시작일": base_date,
+                    H_SYNC: sync_time,
+                    H_TARGET: "\uc5e3\uc9c0 \uc804\uccb4",
+                    H_MACHINE: machine,
+                    H_BLADE: "AT 날물(후면)",
+                    H_USAGE_M: round(float(usage_m), 3),
+                    H_USAGE_C: "",
+                    H_BASE_DATE: base_date,
                 }
             )
 
@@ -1008,16 +1069,16 @@ def build_sync_history_entries(result_df: pd.DataFrame, dataset_type: str, sourc
         return pd.DataFrame()
     history_df = pd.DataFrame(entries)
     grouped = (
-        history_df.groupby(["반영시각", "대상", "설비", "날물명"], as_index=False)
+        history_df.groupby([H_SYNC, H_TARGET, H_MACHINE, H_BLADE], as_index=False)
         .agg(
             {
-                "반영 사용량(m)": lambda values: round(sum(float(v) for v in values if str(v).strip() not in {"", "nan"}), 3)
+                H_USAGE_M: lambda values: round(sum(float(v) for v in values if str(v).strip() not in {"", "nan"}), 3)
                 if any(str(v).strip() not in {"", "nan"} for v in values)
                 else "",
-                "반영 사용량(회)": lambda values: int(round(sum(float(v) for v in values if str(v).strip() not in {"", "nan"})))
+                H_USAGE_C: lambda values: int(round(sum(float(v) for v in values if str(v).strip() not in {"", "nan"})))
                 if any(str(v).strip() not in {"", "nan"} for v in values)
                 else "",
-                "시작일": lambda values: min([str(v).strip() for v in values if str(v).strip()], default=""),
+                H_BASE_DATE: lambda values: min([str(v).strip() for v in values if str(v).strip()], default=""),
             }
         )
     )
@@ -1028,35 +1089,35 @@ def normalize_sync_history_dataframe(history_df: pd.DataFrame) -> pd.DataFrame:
     if history_df.empty:
         return pd.DataFrame(
             columns=[
-                "반영시각",
-                "대상",
-                "설비",
-                "날물명",
-                "반영 사용량(m)",
-                "반영 사용량(회)",
-                "시작일",
+                H_SYNC,
+                H_TARGET,
+                H_MACHINE,
+                H_BLADE,
+                H_USAGE_M,
+                H_USAGE_C,
+                H_BASE_DATE,
             ]
         )
 
     normalized = history_df.copy()
     expected_columns = [
-        "반영시각",
-        "대상",
-        "설비",
-        "날물명",
-        "반영 사용량(m)",
-        "반영 사용량(회)",
-        "시작일",
+        H_SYNC,
+        H_TARGET,
+        H_MACHINE,
+        H_BLADE,
+        H_USAGE_M,
+        H_USAGE_C,
+        H_BASE_DATE,
     ]
     normalized = normalized.rename(
         columns={
-            "諛섏쁺?쒓컖": "반영시각",
-            "???": "대상",
-            "?ㅻ퉬": "설비",
-            "?좊Ъ紐?": "날물명",
-            "諛섏쁺 ?ъ슜??m)": "반영 사용량(m)",
-            "諛섏쁺 ?ъ슜????": "반영 사용량(회)",
-            "?쒖옉??": "시작일",
+            "諛섏쁺?쒓컖": H_SYNC,
+            "???": H_TARGET,
+            "?ㅻ퉬": H_MACHINE,
+            "?좊Ъ紐?": H_BLADE,
+            "諛섏쁺 ?ъ슜??m)": H_USAGE_M,
+            "諛섏쁺 ?ъ슜????": H_USAGE_C,
+            "?쒖옉??": H_BASE_DATE,
         }
     )
     normalized = normalized.loc[:, ~normalized.columns.duplicated()]
@@ -1065,23 +1126,23 @@ def normalize_sync_history_dataframe(history_df: pd.DataFrame) -> pd.DataFrame:
             normalized[column] = ""
 
     normalized = normalized[expected_columns]
-    normalized["반영시각"] = normalized["반영시각"].fillna("").astype(str).str.strip()
-    normalized["대상"] = normalized["대상"].fillna("").astype(str).str.strip()
-    normalized["설비"] = normalized["설비"].fillna("").astype(str).str.strip()
-    normalized["날물명"] = normalized["날물명"].fillna("").astype(str).str.strip()
-    normalized["시작일"] = normalized["시작일"].fillna("").astype(str).str.strip().apply(normalize_history_date_value)
-    normalized["반영 사용량(m)"] = pd.to_numeric(normalized["반영 사용량(m)"], errors="coerce")
-    normalized["반영 사용량(회)"] = pd.to_numeric(normalized["반영 사용량(회)"], errors="coerce")
-    normalized["_sort_time"] = pd.to_datetime(normalized["반영시각"], errors="coerce")
-    normalized = normalized.sort_values(by=["_sort_time", "반영시각"], ascending=[True, True], na_position="last")
+    normalized[H_SYNC] = normalized[H_SYNC].fillna("").astype(str).str.strip()
+    normalized[H_TARGET] = normalized[H_TARGET].fillna("").astype(str).str.strip()
+    normalized[H_MACHINE] = normalized[H_MACHINE].fillna("").astype(str).str.strip()
+    normalized[H_BLADE] = normalized[H_BLADE].fillna("").astype(str).str.strip()
+    normalized[H_BASE_DATE] = normalized[H_BASE_DATE].fillna("").astype(str).str.strip().apply(normalize_history_date_value)
+    normalized[H_USAGE_M] = pd.to_numeric(normalized[H_USAGE_M], errors="coerce")
+    normalized[H_USAGE_C] = pd.to_numeric(normalized[H_USAGE_C], errors="coerce")
+    normalized["_sort_time"] = pd.to_datetime(normalized[H_SYNC], errors="coerce")
+    normalized = normalized.sort_values(by=["_sort_time", H_SYNC], ascending=[True, True], na_position="last")
 
-    dedupe_keys = ["대상", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "시작일"]
+    dedupe_keys = [H_SYNC, H_TARGET, H_MACHINE, H_BLADE, H_USAGE_M, H_USAGE_C, H_BASE_DATE]
     normalized = normalized.drop_duplicates(subset=dedupe_keys, keep="first")
     normalized = normalized.drop(columns=["_sort_time"], errors="ignore")
-    normalized["반영 사용량(m)"] = normalized["반영 사용량(m)"].apply(
+    normalized[H_USAGE_M] = normalized[H_USAGE_M].apply(
         lambda value: "" if pd.isna(value) else round(float(value), 3)
     )
-    normalized["반영 사용량(회)"] = normalized["반영 사용량(회)"].apply(
+    normalized[H_USAGE_C] = normalized[H_USAGE_C].apply(
         lambda value: "" if pd.isna(value) else int(round(float(value)))
     )
     return normalized.reset_index(drop=True)

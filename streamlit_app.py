@@ -26,6 +26,11 @@ import requests
 
 import streamlit as st
 
+try:
+    import gspread
+except Exception:
+    gspread = None
+
 
 
 
@@ -56,6 +61,8 @@ DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
 UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
 
 SYNC_HISTORY_WORKSHEET_NAME = "DASHBOARD_SYNC_HISTORY"
+
+COMPLETION_HISTORY_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY"
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -735,6 +742,11 @@ def init_state() -> None:
 
         st.session_state.blade_reset_at = raw_blade_reset_at if isinstance(raw_blade_reset_at, dict) else {}
 
+    st.session_state.blade_reset_at = rebuild_blade_reset_at_from_completion_history(
+        st.session_state.get("blade_reset_at", {}),
+        st.session_state.get("completion_history", []),
+    )
+
     if "replacement_assignees" not in st.session_state:
 
         raw_replacement_assignees = saved_state.get("replacement_assignees", {})
@@ -1191,19 +1203,23 @@ def save_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 
 def load_completion_history() -> list[dict[str, Any]]:
 
+    remote_history = load_remote_completion_history()
+
     if not COMPLETION_HISTORY_PATH.exists():
 
-        return []
+        return remote_history
 
     try:
 
         data = json.loads(COMPLETION_HISTORY_PATH.read_text(encoding="utf-8"))
 
-        return normalize_completion_history(data if isinstance(data, list) else [])
+        local_history = normalize_completion_history(data if isinstance(data, list) else [])
+
+        return merge_completion_history(local_history, remote_history)
 
     except Exception:
 
-        return []
+        return remote_history
 
 
 
@@ -1259,11 +1275,188 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
 
 
+def load_sheet_config() -> dict[str, str]:
+
+    config_path = WORK_DIR / "sheet_config.json"
+
+    if not config_path.exists():
+
+        return {}
+
+    try:
+
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+
+        return config if isinstance(config, dict) else {}
+
+    except Exception:
+
+        return {}
+
+
+
+def get_google_spreadsheet():
+
+    if gspread is None:
+
+        return None
+
+    config = load_sheet_config()
+
+    spreadsheet_name = str(config.get("spreadsheet_name", "")).strip() or "엣지 ERP 자동업로드"
+
+    credentials_path = Path(str(config.get("credentials_path", "")).strip())
+
+    if not credentials_path.exists():
+
+        credentials_path = WORK_DIR / "google-service-account.json"
+
+    if not credentials_path.exists():
+
+        return None
+
+    try:
+
+        client = gspread.service_account(filename=str(credentials_path))
+
+        return client.open(spreadsheet_name)
+
+    except Exception:
+
+        return None
+
+
+
+def get_or_create_worksheet(spreadsheet, title: str, rows: int = 1000, cols: int = 20):
+
+    try:
+
+        return spreadsheet.worksheet(title)
+
+    except Exception:
+
+        return spreadsheet.add_worksheet(title=title, rows=str(rows), cols=str(cols))
+
+
+
+def load_remote_completion_history() -> list[dict[str, Any]]:
+
+    spreadsheet = get_google_spreadsheet()
+
+    if spreadsheet is None:
+
+        return []
+
+    try:
+
+        worksheet = spreadsheet.worksheet(COMPLETION_HISTORY_WORKSHEET_NAME)
+
+        return normalize_completion_history(worksheet.get_all_records())
+
+    except Exception:
+
+        return []
+
+
+
+def save_remote_completion_history(history: list[dict[str, Any]]) -> None:
+
+    spreadsheet = get_google_spreadsheet()
+
+    if spreadsheet is None:
+
+        return
+
+    try:
+
+        normalized = normalize_completion_history(history)
+
+        columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+
+        rows = [
+            [
+                str(entry.get(column, "")).strip()
+                for column in columns
+            ]
+            for entry in normalized
+        ]
+
+        worksheet = get_or_create_worksheet(
+            spreadsheet,
+            COMPLETION_HISTORY_WORKSHEET_NAME,
+            rows=max(len(rows) + 100, 1000),
+            cols=len(columns) + 2,
+        )
+
+        worksheet.clear()
+
+        worksheet.update([columns, *rows], "A1", value_input_option="RAW")
+
+    except Exception:
+
+        return
+
+
+
+def merge_completion_history(*history_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
+
+    merged: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+
+    for history in history_lists:
+
+        for entry in normalize_completion_history(history):
+
+            key = (
+                str(entry.get("교체완료시각", "")).strip(),
+                str(entry.get("설비", "")).strip(),
+                str(entry.get("날물명", "")).strip(),
+                str(entry.get("교체 시점 사용량", "")).strip(),
+            )
+
+            merged[key] = entry
+
+    return sorted(merged.values(), key=lambda row: str(row.get("교체완료시각", "")), reverse=True)
+
+
+
+def rebuild_blade_reset_at_from_completion_history(
+    blade_reset_at: dict[str, str] | None,
+    completion_history: list[dict[str, Any]],
+) -> dict[str, str]:
+
+    rebuilt = dict(blade_reset_at or {})
+
+    for entry in normalize_completion_history(completion_history):
+
+        completed_at = str(entry.get("교체완료시각", "")).strip()
+
+        machine = normalize_machine_name(str(entry.get("설비", "")).strip())
+
+        blade_name = str(entry.get("날물명", "")).strip()
+
+        if not completed_at or not machine or not blade_name:
+
+            continue
+
+        key = f"{machine}|{blade_name}"
+
+        if completed_at > str(rebuilt.get(key, "")).strip():
+
+            rebuilt[key] = completed_at
+
+    return rebuilt
+
+
+
 def save_completion_history(history: list[dict[str, Any]]) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    COMPLETION_HISTORY_PATH.write_text(json.dumps(normalize_completion_history(history), ensure_ascii=False, indent=2), encoding="utf-8")
+    normalized = normalize_completion_history(history)
+
+    COMPLETION_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    save_remote_completion_history(normalized)
 
 
 

@@ -4963,6 +4963,8 @@ def main() -> None:
 
         if line_button_cols[0].button("전체", key="line_toggle_all", use_container_width=True, type="primary" if st.session_state.get("line_filter_toggle", "all") == "all" else "secondary"):
 
+            st.session_state.pop("normal_replacement_prompt", None)
+
             st.session_state.line_filter_toggle = "all"
 
             st.session_state.line_machine_filter = "전체"
@@ -4974,6 +4976,8 @@ def main() -> None:
             active = st.session_state.get("line_filter_toggle", "all") == line_name
 
             if line_button_cols[idx].button(line_name, key=f"line_toggle_{line_name}", use_container_width=True, type="primary" if active else "secondary"):
+
+                st.session_state.pop("normal_replacement_prompt", None)
 
                 st.session_state.line_filter_toggle = line_name
 
@@ -4987,6 +4991,8 @@ def main() -> None:
 
             machine_options = ["전체", *[machine for machine in LINE_MACHINE_OPTIONS.get(active_line_filter, []) if any(row["machine"] == machine for row in enriched)]]
 
+            previous_machine_filter = st.session_state.get("line_machine_filter", "전체")
+
             st.selectbox(
 
                 f"{active_line_filter} 세부 선택",
@@ -4996,6 +5002,12 @@ def main() -> None:
                 key="line_machine_filter",
 
             )
+
+            if st.session_state.get("line_machine_filter", "전체") != previous_machine_filter:
+
+                st.session_state.pop("normal_replacement_prompt", None)
+
+                st.rerun()
 
         filtered = [
 

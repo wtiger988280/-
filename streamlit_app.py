@@ -1754,6 +1754,8 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
         period_days = EDGE_UPLOAD_RULES.get(item["machine"], {"periodDays": 7})["periodDays"]
 
+        action_step = "" if total_usage > 0 else item.get("actionStep", "")
+
         next_rows.append(
 
             {
@@ -1767,6 +1769,8 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
                 "avg7d": max(1, round(total_usage / period_days, 3)),
 
                 "installDate": aggregated[key]["start_date"] or item.get("installDate", ""),
+
+                "actionStep": action_step,
 
             }
 
@@ -1853,6 +1857,8 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
 
+        action_step = "" if total_usage > 0 else item.get("actionStep", "")
+
         next_rows.append(
 
             {
@@ -1866,6 +1872,8 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
                 "avg7d": max(0, round(total_usage / 7, 3)),
 
                 "installDate": aggregated.get(key, {}).get("start_date") or item.get("installDate", ""),
+
+                "actionStep": action_step,
 
             }
 

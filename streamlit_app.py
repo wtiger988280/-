@@ -4294,9 +4294,9 @@ def get_action_label(row: dict[str, Any]) -> str:
 
 def render_kpis(enriched: list[dict[str, Any]]) -> None:
 
-    replace_now = len([d for d in enriched if d["status"] == "replace"])
+    replace_now = len([d for d in enriched if d.get("rate", 0) >= 1])
 
-    due_soon = len([d for d in enriched if d["remainDays"] <= 3])
+    due_soon = len([d for d in enriched if 0.7 <= d.get("rate", 0) < 1])
 
     avg_rate = round(sum(d["rate"] for d in enriched) / len(enriched) * 100) if enriched else 0
 
@@ -4306,7 +4306,7 @@ def render_kpis(enriched: list[dict[str, Any]]) -> None:
 
         ("\uc989\uc2dc \uad50\uccb4", f"{replace_now} \uac74", "\uc0ac\uc6a9\ub960 \uae30\uc900"),
 
-        ("3\uc77c \ub0b4 \uad50\uccb4\uc608\uc815", f"{due_soon} \uac74", "\uc120\uc870\ub2ec \ud544\uc694"),
+        ("\uc0ac\uc6a9\ub960 70% \uc774\uc0c1", f"{due_soon} \uac74", "70~99% \uad6c\uac04"),
 
         ("\ud3c9\uade0 \uc0ac\uc6a9\ub960", f"{avg_rate}%", "\ub77c\uc778 \ud3c9\uade0"),
 

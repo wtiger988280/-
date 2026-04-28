@@ -721,7 +721,7 @@ def init_state() -> None:
 
         raw_completion = saved_state.get("completion_history", load_completion_history())
 
-        st.session_state.completion_history = raw_completion if isinstance(raw_completion, list) else []
+        st.session_state.completion_history = normalize_completion_history(raw_completion if isinstance(raw_completion, list) else [])
 
     if "machine_reset_at" not in st.session_state:
 
@@ -1193,7 +1193,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
         data = json.loads(COMPLETION_HISTORY_PATH.read_text(encoding="utf-8"))
 
-        return data if isinstance(data, list) else []
+        return normalize_completion_history(data if isinstance(data, list) else [])
 
     except Exception:
 
@@ -1203,11 +1203,53 @@ def load_completion_history() -> list[dict[str, Any]]:
 
 
 
+def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+
+    normalized: list[dict[str, Any]] = []
+
+    for entry in history:
+
+        if not isinstance(entry, dict):
+
+            continue
+
+        completed_at = str(entry.get("교체완료시각", entry.get("??????", ""))).strip()
+
+        machine = str(entry.get("설비", entry.get("??", ""))).strip()
+
+        blade_name = str(entry.get("날물명", entry.get("???", ""))).strip()
+
+        usage_label = str(entry.get("교체 시점 사용량", entry.get("?? ?? ???", ""))).strip()
+
+        if not completed_at and not machine and not blade_name:
+
+            continue
+
+        normalized.append(
+
+            {
+
+                "교체완료시각": completed_at,
+
+                "설비": normalize_machine_name(machine),
+
+                "날물명": blade_name,
+
+                "교체 시점 사용량": usage_label,
+
+            }
+
+        )
+
+    return normalized
+
+
+
 def save_completion_history(history: list[dict[str, Any]]) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    COMPLETION_HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+    COMPLETION_HISTORY_PATH.write_text(json.dumps(normalize_completion_history(history), ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 
@@ -1606,7 +1648,7 @@ def save_dashboard_state() -> None:
 
         "sheet_sync_history": normalize_sheet_sync_history(st.session_state.get("sheet_sync_history", [])),
 
-        "completion_history": st.session_state.get("completion_history", []),
+        "completion_history": normalize_completion_history(st.session_state.get("completion_history", [])),
 
         "sheet_sync_hashes": st.session_state.get("sheet_sync_hashes", {}),
 
@@ -4103,7 +4145,7 @@ def handle_action(row_id: int) -> None:
 
     }
 
-    st.session_state.completion_history = [completion_entry, *st.session_state.get("completion_history", [])]
+    st.session_state.completion_history = normalize_completion_history([completion_entry, *st.session_state.get("completion_history", [])])
 
 
 
@@ -4830,7 +4872,7 @@ def main() -> None:
 
         if st.session_state.get("completion_history"):
 
-            completion_df = pd.DataFrame(st.session_state.get("completion_history", []))
+            completion_df = pd.DataFrame(normalize_completion_history(st.session_state.get("completion_history", [])))
 
             ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량"]
 

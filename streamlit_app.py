@@ -4043,7 +4043,11 @@ def handle_action(row_id: int) -> None:
 
     today = date.today().isoformat()
 
-    was_replace = selected_item.get("rate", 0) >= 1 or selected_item.get("status") == "replace"
+    selected_standard = parse_numeric_value(selected_item.get("standard", 0))
+
+    selected_rate = completed_usage / selected_standard if selected_standard else 0
+
+    was_replace = selected_rate >= 1
 
 
 
@@ -4076,6 +4080,8 @@ def handle_action(row_id: int) -> None:
 
 
     st.session_state.replace_alert_history.pop(selected_machine, None)
+
+    st.session_state.replace_alert_history.pop(f"{selected_machine}|{selected_blade}", None)
 
     blade_reset_at = st.session_state.get("blade_reset_at", {})
 

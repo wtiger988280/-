@@ -821,7 +821,7 @@ def get_status(rate: float, quality: int) -> str:
 
         return "replace"
 
-    if rate >= 0.6:
+    if rate >= 0.7:
 
         return "caution"
 
@@ -1229,6 +1229,8 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
         assignee = str(entry.get("담당자", entry.get("담당", ""))).strip()
 
+        note = str(entry.get("비고", entry.get("원인", ""))).strip()
+
         if not completed_at and not machine and not blade_name:
 
             continue
@@ -1246,6 +1248,8 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
                 "교체 시점 사용량": usage_label,
 
                 "담당자": assignee,
+
+                "비고": note,
 
             }
 
@@ -2541,6 +2545,12 @@ def send_teams_complete_alert(row: dict[str, Any]) -> None:
     if assignee:
 
         facts.append({"title": "담당자", "value": assignee})
+
+    note = str(row.get("note", row.get("비고", ""))).strip()
+
+    if note:
+
+        facts.append({"title": "비고", "value": note})
 
 
 
@@ -4099,7 +4109,7 @@ def sync_from_google_sheet(
 
 
 
-def handle_action(row_id: int, assignee: str = "") -> None:
+def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     selected_item = next((item for item in st.session_state.equipment_data if item["id"] == row_id), None)
 
@@ -4125,13 +4135,21 @@ def handle_action(row_id: int, assignee: str = "") -> None:
 
     was_replace = selected_rate >= 1
 
-    completion_usage_label = completed_usage_label if was_replace else f"{completed_usage_label}(날물 이상으로 인한 조기 교체)"
+    completion_usage_label = completed_usage_label
 
     assignee = str(assignee or "").strip()
+
+    note = str(note or "").strip()
 
     if was_replace and not assignee:
 
         st.session_state.send_result = f"{selected_machine} · {selected_blade} 담당자를 입력한 뒤 교체필요를 눌러주세요."
+
+        return
+
+    if not was_replace and not note:
+
+        st.session_state.send_result = f"{selected_machine} · {selected_blade} 조기 교체 원인을 입력해 주세요."
 
         return
 
@@ -4189,6 +4207,8 @@ def handle_action(row_id: int, assignee: str = "") -> None:
 
         "담당자": assignee,
 
+        "비고": note,
+
     }
 
     st.session_state.completion_history = normalize_completion_history([completion_entry, *st.session_state.get("completion_history", [])])
@@ -4198,44 +4218,47 @@ def handle_action(row_id: int, assignee: str = "") -> None:
     if was_replace:
 
         message = f"{selected_machine} · {selected_blade} 교체 완료 처리되었습니다."
-
-        try:
-
-            remaining = max(0, selected_standard - completed_usage)
-
-            remain_days = days_left(remaining, parse_numeric_value(selected_item.get("avg7d", 0)))
-
-            alert_row = {
-
-                **selected_item,
-
-                "rate": selected_rate,
-
-                "bladeName": selected_blade,
-
-                "displayBladeName": selected_blade,
-
-                "displayRemaining": format_cycle_value(selected_item, remaining),
-
-                "predictedDate": "-" if remain_days == 999 else f"{remain_days}일 후",
-
-                "assignee": assignee,
-
-                "담당자": assignee,
-
-            }
-
-            send_teams_complete_alert(alert_row)
-
-            message += " Teams 알림도 전송했습니다."
-
-        except Exception as exc:
-
-            message += f" Teams 알림 전송 실패: {exc}"
-
     else:
 
-        message = f"{selected_machine} · {selected_blade} 사용률을 0%로 초기화했습니다."
+        message = f"{selected_machine} · {selected_blade} 조기 교체 처리되었습니다."
+
+    try:
+
+        remaining = max(0, selected_standard - completed_usage)
+
+        remain_days = days_left(remaining, parse_numeric_value(selected_item.get("avg7d", 0)))
+
+        alert_row = {
+
+            **selected_item,
+
+            "rate": selected_rate,
+
+            "bladeName": selected_blade,
+
+            "displayBladeName": selected_blade,
+
+            "displayRemaining": format_cycle_value(selected_item, remaining),
+
+            "predictedDate": "-" if remain_days == 999 else f"{remain_days}일 후",
+
+            "assignee": assignee,
+
+            "담당자": assignee,
+
+            "note": note,
+
+            "비고": note,
+
+        }
+
+        send_teams_complete_alert(alert_row)
+
+        message += " Teams 알림도 전송했습니다."
+
+    except Exception as exc:
+
+        message += f" Teams 알림 전송 실패: {exc}"
 
 
 
@@ -4355,7 +4378,7 @@ def render_usage_bar(rate: float, status: str) -> str:
 
         styles = STATUS_STYLES["replace"]
 
-    elif rate >= 0.6:
+    elif rate >= 0.7:
 
         styles = STATUS_STYLES["caution"]
 
@@ -4383,6 +4406,82 @@ def render_usage_bar(rate: float, status: str) -> str:
 
 
 
+
+
+def render_normal_replacement_prompt() -> None:
+
+    prompt = st.session_state.get("normal_replacement_prompt")
+
+    if not isinstance(prompt, dict):
+
+        return
+
+    row_id = prompt.get("row_id")
+
+    assignee = str(prompt.get("assignee", "")).strip()
+
+    selected_item = next((item for item in st.session_state.equipment_data if item.get("id") == row_id), None)
+
+    if selected_item is None:
+
+        st.session_state.pop("normal_replacement_prompt", None)
+
+        return
+
+    title = "조기 교체 원인 입력"
+
+    description = f"{selected_item.get('machine', '')} · {get_display_blade_name(selected_item)}"
+
+    def render_form() -> None:
+
+        st.write(description)
+
+        with st.form(f"normal_replacement_reason_form_{row_id}"):
+
+            reason = st.text_area("원인", key=f"normal_replacement_reason_{row_id}", placeholder="예: 깨짐, 불량 발생, 날물 이상 등")
+
+            form_cols = st.columns(2)
+
+            submitted = form_cols[0].form_submit_button("교체 처리", use_container_width=True)
+
+            cancelled = form_cols[1].form_submit_button("취소", use_container_width=True)
+
+            if submitted:
+
+                if not reason.strip():
+
+                    st.warning("원인을 입력해 주세요.")
+
+                    return
+
+                handle_action(int(row_id), assignee, reason.strip())
+
+                st.session_state.pop("normal_replacement_prompt", None)
+
+                st.rerun()
+
+            if cancelled:
+
+                st.session_state.pop("normal_replacement_prompt", None)
+
+                st.rerun()
+
+    if hasattr(st, "dialog"):
+
+        @st.dialog(title)
+        def reason_dialog() -> None:
+
+            render_form()
+
+        reason_dialog()
+
+    else:
+
+        with st.container(border=True):
+
+            st.subheader(title)
+
+            render_form()
 
 
 def render_equipment_table(rows: list[dict[str, Any]]) -> None:
@@ -4556,7 +4655,13 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                     st.session_state.replacement_assignees = replacement_assignees
 
-                    handle_action(row["id"], assignee)
+                    if action_label == "정상":
+
+                        st.session_state.normal_replacement_prompt = {"row_id": row["id"], "assignee": assignee}
+
+                    else:
+
+                        handle_action(row["id"], assignee)
 
                     st.rerun()
 
@@ -4898,6 +5003,8 @@ def main() -> None:
 
         render_equipment_table(filtered)
 
+        render_normal_replacement_prompt()
+
 
 
         st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
@@ -5006,7 +5113,7 @@ def main() -> None:
 
             completion_df = pd.DataFrame(normalize_completion_history(st.session_state.get("completion_history", [])))
 
-            ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자"]
+            ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
 
             completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
 

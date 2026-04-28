@@ -4099,6 +4099,8 @@ def handle_action(row_id: int) -> None:
 
     was_replace = selected_rate >= 1
 
+    completion_usage_label = completed_usage_label if was_replace else f"{completed_usage_label}(날물 이상으로 인한 조기 교체)"
+
 
 
     def is_selected_row(item: dict[str, Any]) -> bool:
@@ -4149,7 +4151,7 @@ def handle_action(row_id: int) -> None:
 
         "날물명": selected_blade,
 
-        "교체 시점 사용량": completed_usage_label,
+        "교체 시점 사용량": completion_usage_label,
 
     }
 

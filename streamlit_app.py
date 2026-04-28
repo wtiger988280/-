@@ -729,6 +729,12 @@ def init_state() -> None:
 
         st.session_state.machine_reset_at = raw_machine_reset_at if isinstance(raw_machine_reset_at, dict) else {}
 
+    if "blade_reset_at" not in st.session_state:
+
+        raw_blade_reset_at = saved_state.get("blade_reset_at", {})
+
+        st.session_state.blade_reset_at = raw_blade_reset_at if isinstance(raw_blade_reset_at, dict) else {}
+
     if "sheet_sync_hashes" not in st.session_state:
 
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
@@ -1624,6 +1630,8 @@ def save_dashboard_state() -> None:
 
         "machine_reset_at": st.session_state.get("machine_reset_at", {}),
 
+        "blade_reset_at": st.session_state.get("blade_reset_at", {}),
+
         "line_filter_toggle": st.session_state.get("line_filter_toggle", "all"),
 
         "line_machine_filter": st.session_state.get("line_machine_filter", "전체"),
@@ -1642,6 +1650,8 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
     machine_reset_at = st.session_state.get("machine_reset_at", {})
 
+    blade_reset_at = st.session_state.get("blade_reset_at", {})
+
     for entry in normalize_sheet_sync_history(history):
 
         sync_at = str(entry.get("\ubc18\uc601\uc2dc\uac01", "")).strip()
@@ -1659,6 +1669,12 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
             continue
 
         blade_name = str(entry.get("\ub0a0\ubb3c\uba85", "")).strip()
+
+        blade_cutoff = str(blade_reset_at.get(f"{machine}|{blade_name}", "")).strip()
+
+        if blade_cutoff and sync_at and sync_at <= blade_cutoff:
+
+            continue
 
         usage_m = parse_numeric_value(entry.get("\ubc18\uc601 \uc0ac\uc6a9\ub7c9(m)", 0))
 
@@ -1723,6 +1739,8 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
     machine_reset_at = st.session_state.get("machine_reset_at", {})
 
+    blade_reset_at = st.session_state.get("blade_reset_at", {})
+
     for entry in normalize_sheet_sync_history(history):
 
         sync_at = str(entry.get("\ubc18\uc601\uc2dc\uac01", "")).strip()
@@ -1744,6 +1762,12 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
             continue
 
         blade_name = normalize_boring_blade_name(str(entry.get("\ub0a0\ubb3c\uba85", "")).strip())
+
+        blade_cutoff = str(blade_reset_at.get(f"{machine}|{blade_name}", "")).strip()
+
+        if blade_cutoff and sync_at and sync_at <= blade_cutoff:
+
+            continue
 
         usage_count = parse_numeric_value(entry.get("\ubc18\uc601 \uc0ac\uc6a9\ub7c9(\ud68c)", 0))
 
@@ -4007,19 +4031,9 @@ def handle_action(row_id: int) -> None:
 
         return
 
-    if parse_numeric_value(selected_item.get("usage", 0)) <= 0 or selected_item.get("rate", 0) < 1:
+    selected_machine = str(selected_item.get("machine", "")).strip()
 
-        st.session_state.send_result = f"{selected_item['machine']}은 아직 교체 대상 상태가 아닙니다."
-
-        save_dashboard_state()
-
-        return
-
-
-
-    today = date.today().isoformat()
-
-    selected_machine = selected_item["machine"]
+    selected_blade = get_display_blade_name(selected_item)
 
     completed_usage = parse_numeric_value(selected_item.get("usage", 0))
 
@@ -4027,19 +4041,31 @@ def handle_action(row_id: int) -> None:
 
     completed_at = now_kst().strftime("%Y-%m-%d %H:%M:%S")
 
+    today = date.today().isoformat()
+
+    was_replace = selected_item.get("rate", 0) >= 1 or selected_item.get("status") == "replace"
+
+
+
+    def is_selected_row(item: dict[str, Any]) -> bool:
+
+        return str(item.get("machine", "")).strip() == selected_machine and get_display_blade_name(item) == selected_blade
+
+
+
     st.session_state.equipment_data = [
 
         {
 
             **item,
 
-            "usage": 0 if item["machine"] == selected_machine else item["usage"],
+            "usage": 0 if is_selected_row(item) else item.get("usage", 0),
 
-            "quality": 0 if item["machine"] == selected_machine else item["quality"],
+            "quality": 0 if is_selected_row(item) else item.get("quality", 0),
 
-            "installDate": today if item["machine"] == selected_machine else item.get("installDate", ""),
+            "installDate": today if is_selected_row(item) else item.get("installDate", ""),
 
-            "actionStep": "" if item["machine"] == selected_machine else item.get("actionStep", ""),
+            "actionStep": "" if is_selected_row(item) else item.get("actionStep", ""),
 
         }
 
@@ -4047,21 +4073,25 @@ def handle_action(row_id: int) -> None:
 
     ]
 
+
+
     st.session_state.replace_alert_history.pop(selected_machine, None)
 
-    machine_reset_at = st.session_state.get("machine_reset_at", {})
+    blade_reset_at = st.session_state.get("blade_reset_at", {})
 
-    machine_reset_at[selected_machine] = completed_at
+    blade_reset_at[f"{selected_machine}|{selected_blade}"] = completed_at
 
-    st.session_state.machine_reset_at = machine_reset_at
+    st.session_state.blade_reset_at = blade_reset_at
+
+
 
     completion_entry = {
 
         "??????": completed_at,
 
-        "??": selected_item["machine"],
+        "??": selected_machine,
 
-        "???": get_display_blade_name(selected_item),
+        "???": selected_blade,
 
         "?? ?? ???": completed_usage_label,
 
@@ -4069,17 +4099,27 @@ def handle_action(row_id: int) -> None:
 
     st.session_state.completion_history = [completion_entry, *st.session_state.get("completion_history", [])]
 
-    message = f"{selected_item['machine']} ?? ?? ???????."
 
-    try:
 
-        send_teams_complete_alert(selected_item)
+    if was_replace:
 
-        message += " Teams ??? ??????."
+        message = f"{selected_machine} ? {selected_blade} ?? ?? ???????."
 
-    except Exception as exc:
+        try:
 
-        message += f" Teams ?? ?? ??: {exc}"
+            send_teams_complete_alert({**selected_item, "bladeName": selected_blade})
+
+            message += " Teams ??? ??????."
+
+        except Exception as exc:
+
+            message += f" Teams ?? ?? ??: {exc}"
+
+    else:
+
+        message = f"{selected_machine} ? {selected_blade} ???? 0%? ???????."
+
+
 
     st.session_state.send_result = message
 

@@ -735,6 +735,12 @@ def init_state() -> None:
 
         st.session_state.blade_reset_at = raw_blade_reset_at if isinstance(raw_blade_reset_at, dict) else {}
 
+    if "replacement_assignees" not in st.session_state:
+
+        raw_replacement_assignees = saved_state.get("replacement_assignees", {})
+
+        st.session_state.replacement_assignees = raw_replacement_assignees if isinstance(raw_replacement_assignees, dict) else {}
+
     if "sheet_sync_hashes" not in st.session_state:
 
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
@@ -1221,6 +1227,8 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
         usage_label = str(entry.get("교체 시점 사용량", entry.get("?? ?? ???", ""))).strip()
 
+        assignee = str(entry.get("담당자", entry.get("담당", ""))).strip()
+
         if not completed_at and not machine and not blade_name:
 
             continue
@@ -1236,6 +1244,8 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
                 "날물명": blade_name,
 
                 "교체 시점 사용량": usage_label,
+
+                "담당자": assignee,
 
             }
 
@@ -1649,6 +1659,8 @@ def save_dashboard_state() -> None:
         "sheet_sync_history": normalize_sheet_sync_history(st.session_state.get("sheet_sync_history", [])),
 
         "completion_history": normalize_completion_history(st.session_state.get("completion_history", [])),
+
+        "replacement_assignees": st.session_state.get("replacement_assignees", {}),
 
         "sheet_sync_hashes": st.session_state.get("sheet_sync_hashes", {}),
 
@@ -2510,6 +2522,26 @@ def send_teams_complete_alert(row: dict[str, Any]) -> None:
 
         raise ValueError("Teams Webhook URL이 설정되지 않았습니다.")
 
+    assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
+
+    facts = [
+
+        {"title": "설비", "value": row["machine"]},
+
+        {"title": "날물", "value": row["bladeName"]},
+
+        {"title": "교체 시점 사용량", "value": format_cycle_value(row, parse_numeric_value(row.get("usage", 0)))},
+
+        {"title": "조치", "value": "교체완료"},
+
+        {"title": "처리일", "value": date.today().isoformat()},
+
+    ]
+
+    if assignee:
+
+        facts.append({"title": "담당자", "value": assignee})
+
 
 
     payload = {
@@ -2540,19 +2572,7 @@ def send_teams_complete_alert(row: dict[str, Any]) -> None:
 
                             "type": "FactSet",
 
-                            "facts": [
-
-                                {"title": "설비", "value": row["machine"]},
-
-                                {"title": "날물", "value": row["bladeName"]},
-
-                                {"title": "교체 시점 사용량", "value": format_cycle_value(row, parse_numeric_value(row.get("usage", 0)))},
-
-                                {"title": "조치", "value": "교체완료"},
-
-                                {"title": "처리일", "value": date.today().isoformat()},
-
-                            ],
+                            "facts": facts,
 
                         },
 
@@ -2586,6 +2606,26 @@ def send_teams_replace_alert(row: dict[str, Any]) -> None:
 
         raise ValueError("Teams Webhook URL이 설정되지 않았습니다.")
 
+    assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
+
+    facts = [
+
+        {"title": "설비", "value": row["machine"]},
+
+        {"title": "날물", "value": row["displayBladeName"]},
+
+        {"title": "사용률", "value": f"{round(row['rate'] * 100)}%"},
+
+        {"title": "잔여사용량", "value": row["displayRemaining"]},
+
+        {"title": "예측교체", "value": row["predictedDate"]},
+
+    ]
+
+    if assignee:
+
+        facts.append({"title": "담당자", "value": assignee})
+
 
 
     payload = {
@@ -2616,19 +2656,7 @@ def send_teams_replace_alert(row: dict[str, Any]) -> None:
 
                             "type": "FactSet",
 
-                            "facts": [
-
-                                {"title": "설비", "value": row["machine"]},
-
-                                {"title": "날물", "value": row["displayBladeName"]},
-
-                                {"title": "사용률", "value": f"{round(row['rate'] * 100)}%"},
-
-                                {"title": "잔여사용량", "value": row["displayRemaining"]},
-
-                                {"title": "예측교체", "value": row["predictedDate"]},
-
-                            ],
+                            "facts": facts,
 
                         },
 
@@ -2680,13 +2708,15 @@ def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
 
     alert_history = st.session_state.get("replace_alert_history", {})
 
-    active_machines = {str(row.get("machine", "")) for row in enriched if row.get("status") == "replace"}
+    active_alert_keys = {
+        f"{str(row.get('machine', '')).strip()}|{get_display_blade_name(row)}"
+        for row in enriched
+        if row.get("status") == "replace"
+    }
 
-    next_history = {machine: signature for machine, signature in alert_history.items() if machine in active_machines}
+    next_history = {key: signature for key, signature in alert_history.items() if key in active_alert_keys}
 
     latest_message = ""
-
-
 
     for row in enriched:
 
@@ -2696,27 +2726,23 @@ def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
 
             continue
 
+        alert_key = f"{machine}|{get_display_blade_name(row)}"
 
-
-        if next_history.get(machine) == "sent":
+        if next_history.get(alert_key) == "sent":
 
             continue
-
-
 
         try:
 
             send_teams_replace_alert(row)
 
-            next_history[machine] = "sent"
+            next_history[alert_key] = "sent"
 
-            latest_message = f"{machine} 설비 날물 교체 알림을 전송했습니다."
+            latest_message = f"{machine} · {get_display_blade_name(row)} 날물 교체 알림을 전송했습니다."
 
         except Exception as exc:
 
-            latest_message = f"{machine} 설비 날물 교체 알림 전송 실패: {exc}"
-
-
+            latest_message = f"{machine} · {get_display_blade_name(row)} 날물 교체 알림 전송 실패: {exc}"
 
     if next_history != alert_history or latest_message:
 
@@ -4073,7 +4099,7 @@ def sync_from_google_sheet(
 
 
 
-def handle_action(row_id: int) -> None:
+def handle_action(row_id: int, assignee: str = "") -> None:
 
     selected_item = next((item for item in st.session_state.equipment_data if item["id"] == row_id), None)
 
@@ -4100,6 +4126,14 @@ def handle_action(row_id: int) -> None:
     was_replace = selected_rate >= 1
 
     completion_usage_label = completed_usage_label if was_replace else f"{completed_usage_label}(날물 이상으로 인한 조기 교체)"
+
+    assignee = str(assignee or "").strip()
+
+    if was_replace and not assignee:
+
+        st.session_state.send_result = f"{selected_machine} · {selected_blade} 담당자를 입력한 뒤 교체필요를 눌러주세요."
+
+        return
 
 
 
@@ -4153,6 +4187,8 @@ def handle_action(row_id: int) -> None:
 
         "교체 시점 사용량": completion_usage_label,
 
+        "담당자": assignee,
+
     }
 
     st.session_state.completion_history = normalize_completion_history([completion_entry, *st.session_state.get("completion_history", [])])
@@ -4165,7 +4201,31 @@ def handle_action(row_id: int) -> None:
 
         try:
 
-            send_teams_complete_alert({**selected_item, "bladeName": selected_blade})
+            remaining = max(0, selected_standard - completed_usage)
+
+            remain_days = days_left(remaining, parse_numeric_value(selected_item.get("avg7d", 0)))
+
+            alert_row = {
+
+                **selected_item,
+
+                "rate": selected_rate,
+
+                "bladeName": selected_blade,
+
+                "displayBladeName": selected_blade,
+
+                "displayRemaining": format_cycle_value(selected_item, remaining),
+
+                "predictedDate": "-" if remain_days == 999 else f"{remain_days}일 후",
+
+                "assignee": assignee,
+
+                "담당자": assignee,
+
+            }
+
+            send_teams_complete_alert(alert_row)
 
             message += " Teams 알림도 전송했습니다."
 
@@ -4415,8 +4475,8 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
     with st.container(border=True):
 
-        header_cols = st.columns([0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
-        header_labels = ["\ub77c\uc778", "\uc124\ube44", "\ub0a0\ubb3c\uba85", "\uae30\uc900\uac12", "\uc0ac\uc6a9\ub960", "\uc794\uc5ec\uc0ac\uc6a9\ub7c9", "\uc608\uce21\uad50\uccb4", "\uad50\uccb4\uc0c1\ud0dc"]
+        header_cols = st.columns([0.7, 1.1, 1.35, 0.9, 1.1, 1.0, 0.9, 1.0, 1.0])
+        header_labels = ["\ub77c\uc778", "\uc124\ube44", "\ub0a0\ubb3c\uba85", "\uae30\uc900\uac12", "\uc0ac\uc6a9\ub960", "\uc794\uc5ec\uc0ac\uc6a9\ub7c9", "\uc608\uce21\uad50\uccb4", "\ub2f4\ub2f9\uc790", "\uad50\uccb4\uc0c1\ud0dc"]
         for col, label in zip(header_cols, header_labels):
             col.caption(label)
         st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
@@ -4430,7 +4490,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
             with st.container(border=True):
 
-                row_cols = st.columns([0.8, 1.2, 1.4, 1.0, 1.2, 1.1, 1.0, 1.0])
+                row_cols = st.columns([0.7, 1.1, 1.35, 0.9, 1.1, 1.0, 0.9, 1.0, 1.0])
 
                 row_cols[0].markdown(
 
@@ -4454,6 +4514,28 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 action_label = get_action_label(row)
 
+                assignee_record_key = f"{row['machine']}|{row['displayBladeName']}"
+
+                assignee_widget_key = f"replacement_assignee_{row['id']}"
+
+                assignee_defaults = st.session_state.get("replacement_assignees", {})
+
+                if assignee_widget_key not in st.session_state:
+
+                    st.session_state[assignee_widget_key] = assignee_defaults.get(assignee_record_key, "")
+
+                row_cols[7].text_input(
+
+                    "담당자",
+
+                    key=assignee_widget_key,
+
+                    label_visibility="collapsed",
+
+                    placeholder="담당자",
+
+                )
+
                 if action_label == "교체필요":
 
                     button_type = "primary"
@@ -4464,9 +4546,17 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 action_key_prefix = "completed" if action_label == "교체완료" else ("replace" if action_label == "교체필요" else "normal")
 
-                if row_cols[7].button(action_label, key=f"table_action_{action_key_prefix}_{row['id']}", use_container_width=True, type=button_type):
+                if row_cols[8].button(action_label, key=f"table_action_{action_key_prefix}_{row['id']}", use_container_width=True, type=button_type):
 
-                    handle_action(row["id"])
+                    assignee = str(st.session_state.get(assignee_widget_key, "")).strip()
+
+                    replacement_assignees = st.session_state.get("replacement_assignees", {})
+
+                    replacement_assignees[assignee_record_key] = assignee
+
+                    st.session_state.replacement_assignees = replacement_assignees
+
+                    handle_action(row["id"], assignee)
 
                     st.rerun()
 
@@ -4916,7 +5006,7 @@ def main() -> None:
 
             completion_df = pd.DataFrame(normalize_completion_history(st.session_state.get("completion_history", [])))
 
-            ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량"]
+            ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자"]
 
             completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
 

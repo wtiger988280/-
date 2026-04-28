@@ -4111,7 +4111,7 @@ def handle_action(row_id: int) -> None:
 
             "installDate": today if is_selected_row(item) else item.get("installDate", ""),
 
-            "actionStep": "" if is_selected_row(item) else item.get("actionStep", ""),
+            "actionStep": "completed" if is_selected_row(item) and was_replace else ("" if is_selected_row(item) else item.get("actionStep", "")),
 
         }
 
@@ -4135,13 +4135,13 @@ def handle_action(row_id: int) -> None:
 
     completion_entry = {
 
-        "??????": completed_at,
+        "교체완료시각": completed_at,
 
-        "??": selected_machine,
+        "설비": selected_machine,
 
-        "???": selected_blade,
+        "날물명": selected_blade,
 
-        "?? ?? ???": completed_usage_label,
+        "교체 시점 사용량": completed_usage_label,
 
     }
 
@@ -4151,21 +4151,21 @@ def handle_action(row_id: int) -> None:
 
     if was_replace:
 
-        message = f"{selected_machine} ? {selected_blade} ?? ?? ???????."
+        message = f"{selected_machine} · {selected_blade} 교체 완료 처리되었습니다."
 
         try:
 
             send_teams_complete_alert({**selected_item, "bladeName": selected_blade})
 
-            message += " Teams ??? ??????."
+            message += " Teams 알림도 전송했습니다."
 
         except Exception as exc:
 
-            message += f" Teams ?? ?? ??: {exc}"
+            message += f" Teams 알림 전송 실패: {exc}"
 
     else:
 
-        message = f"{selected_machine} ? {selected_blade} ???? 0%? ???????."
+        message = f"{selected_machine} · {selected_blade} 사용률을 0%로 초기화했습니다."
 
 
 
@@ -4181,9 +4181,13 @@ def get_action_label(row: dict[str, Any]) -> str:
 
     if row.get("rate", 0) >= 1:
 
-        return "\uad50\uccb4"
+        return "교체필요"
 
-    return "\uc815\uc0c1"
+    if row.get("actionStep") == "completed" and parse_numeric_value(row.get("usage", 0)) <= 0:
+
+        return "교체완료"
+
+    return "정상"
 
 
 
@@ -4367,6 +4371,30 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
         }
 
+        [class*="st-key-table_action_completed_"] div[data-testid="stButton"] > button[kind="secondary"] {
+
+            background: #fff7ed !important;
+
+            color: #c2410c !important;
+
+            border: 1px solid #fdba74 !important;
+
+            border-radius: 999px !important;
+
+            font-weight: 700 !important;
+
+        }
+
+        [class*="st-key-table_action_completed_"] div[data-testid="stButton"] > button[kind="secondary"]:hover {
+
+            background: #ffedd5 !important;
+
+            color: #9a3412 !important;
+
+            border: 1px solid #fb923c !important;
+
+        }
+
         </style>
 
         """,
@@ -4414,7 +4442,9 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 row_cols[6].write(row["predictedDate"])
 
-                if get_action_label(row) == "\uad50\uccb4":
+                action_label = get_action_label(row)
+
+                if action_label == "교체필요":
 
                     button_type = "primary"
 
@@ -4422,7 +4452,9 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                     button_type = "secondary"
 
-                if row_cols[7].button(get_action_label(row), key=f"table_action_{row['id']}", use_container_width=True, type=button_type):
+                action_key_prefix = "completed" if action_label == "교체완료" else ("replace" if action_label == "교체필요" else "normal")
+
+                if row_cols[7].button(action_label, key=f"table_action_{action_key_prefix}_{row['id']}", use_container_width=True, type=button_type):
 
                     handle_action(row["id"])
 

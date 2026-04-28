@@ -4155,7 +4155,7 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     if not was_replace and not note:
 
-        st.session_state.send_result = f"{selected_machine} · {selected_blade} 조기 교체 원인을 입력해 주세요."
+        st.session_state.send_result = f"{selected_machine} · {selected_blade} 교체 이유를 입력해 주세요."
 
         return
 
@@ -4434,7 +4434,7 @@ def render_normal_replacement_prompt() -> None:
 
         return
 
-    title = "조기 교체 원인 입력"
+    title = "교체 이유 입력"
 
     description = f"{selected_item.get('machine', '')} · {get_display_blade_name(selected_item)}"
 
@@ -4446,7 +4446,7 @@ def render_normal_replacement_prompt() -> None:
 
             form_assignee = st.text_input("담당자", value=assignee, key=f"normal_replacement_assignee_{row_id}", placeholder="담당자 이름")
 
-            reason = st.text_area("원인", key=f"normal_replacement_reason_{row_id}", placeholder="예: 깨짐, 불량 발생, 날물 이상 등")
+            reason = st.text_area("교체 이유", key=f"normal_replacement_reason_{row_id}", placeholder="예: 깨짐, 불량 발생, 날물 이상 등")
 
             form_cols = st.columns(2)
 
@@ -4464,7 +4464,7 @@ def render_normal_replacement_prompt() -> None:
 
                 if not reason.strip():
 
-                    st.warning("원인을 입력해 주세요.")
+                    st.warning("교체 이유를 입력해 주세요.")
 
                     return
 

@@ -2888,6 +2888,10 @@ def get_boring_standard(machine: Any, blade_name: Any) -> int:
 
             return 75000
 
+    if normalized_blade == "Φ20 날물" and normalized_machine.startswith("런닝"):
+
+        return 30000
+
     return 10000
 
 

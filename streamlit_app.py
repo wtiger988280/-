@@ -4986,6 +4986,14 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                         handle_action(row["id"], assignee)
 
+                        if action_label == "교체필요" and st.session_state.send_result and "담당자를 입력" not in st.session_state.send_result:
+
+                            replacement_assignees.pop(assignee_record_key, None)
+
+                            st.session_state.replacement_assignees = replacement_assignees
+
+                            st.session_state[assignee_widget_key] = ""
+
                     st.rerun()
 
 

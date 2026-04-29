@@ -4940,6 +4940,20 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 assignee_defaults = st.session_state.get("replacement_assignees", {})
 
+                pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
+
+                if assignee_record_key in pending_clear_assignees:
+
+                    assignee_defaults.pop(assignee_record_key, None)
+
+                    st.session_state.replacement_assignees = assignee_defaults
+
+                    st.session_state[assignee_widget_key] = ""
+
+                    pending_clear_assignees.remove(assignee_record_key)
+
+                    st.session_state.clear_assignee_record_keys = list(pending_clear_assignees)
+
                 if assignee_widget_key not in st.session_state:
 
                     st.session_state[assignee_widget_key] = assignee_defaults.get(assignee_record_key, "")
@@ -4992,7 +5006,11 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                             st.session_state.replacement_assignees = replacement_assignees
 
-                            st.session_state[assignee_widget_key] = ""
+                            pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
+
+                            pending_clear_assignees.add(assignee_record_key)
+
+                            st.session_state.clear_assignee_record_keys = list(pending_clear_assignees)
 
                     st.rerun()
 

@@ -64,6 +64,8 @@ SYNC_HISTORY_WORKSHEET_NAME = "DASHBOARD_SYNC_HISTORY"
 
 COMPLETION_HISTORY_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY"
 
+PERSIST_STATE_WORKSHEET_NAME = "DASHBOARD_PERSIST_STATE"
+
 KST = ZoneInfo("Asia/Seoul")
 
 STREAMLIT_APP_REVISION = "2026-04-27 16:05"
@@ -1398,6 +1400,106 @@ def save_remote_completion_history(history: list[dict[str, Any]]) -> None:
 
 
 
+def decode_persist_value(value: Any) -> Any:
+
+    text = str(value or "").strip()
+
+    if not text:
+
+        return ""
+
+    try:
+
+        return json.loads(text)
+
+    except Exception:
+
+        return text
+
+
+
+def load_remote_dashboard_state() -> dict[str, Any]:
+
+    spreadsheet = get_google_spreadsheet()
+
+    if spreadsheet is None:
+
+        return {}
+
+    try:
+
+        worksheet = spreadsheet.worksheet(PERSIST_STATE_WORKSHEET_NAME)
+
+        records = worksheet.get_all_records()
+
+        state: dict[str, Any] = {}
+
+        for record in records:
+
+            key = str(record.get("key", "")).strip()
+
+            if not key:
+
+                continue
+
+            state[key] = decode_persist_value(record.get("value", ""))
+
+        return state
+
+    except Exception:
+
+        return {}
+
+
+
+def save_remote_dashboard_state(data: dict[str, Any]) -> None:
+
+    spreadsheet = get_google_spreadsheet()
+
+    if spreadsheet is None:
+
+        return
+
+    persist_keys = [
+        "usage_reset_at",
+        "machine_reset_at",
+        "blade_reset_at",
+        "replacement_assignees",
+        "replace_alert_history",
+        "last_applied_upload_at",
+        "last_snapshot_sync_key",
+        "boring_snapshot_loaded_key",
+        "line_filter_toggle",
+        "line_machine_filter",
+    ]
+
+    try:
+
+        rows = [
+            [
+                key,
+                json.dumps(data.get(key, ""), ensure_ascii=False),
+            ]
+            for key in persist_keys
+        ]
+
+        worksheet = get_or_create_worksheet(
+            spreadsheet,
+            PERSIST_STATE_WORKSHEET_NAME,
+            rows=max(len(rows) + 100, 1000),
+            cols=4,
+        )
+
+        worksheet.clear()
+
+        worksheet.update([["key", "value"], *rows], "A1", value_input_option="RAW")
+
+    except Exception:
+
+        return
+
+
+
 def merge_completion_history(*history_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     merged: dict[tuple[str, str, str, str], dict[str, Any]] = {}
@@ -1819,19 +1921,29 @@ def format_sync_display_dataframe(df: pd.DataFrame):
 
 def load_dashboard_state() -> dict[str, Any]:
 
+    remote_state = load_remote_dashboard_state()
+
+    local_state: dict[str, Any] = {}
+
     if not DASHBOARD_STATE_PATH.exists():
 
-        return {}
+        return remote_state
 
     try:
 
         data = json.loads(DASHBOARD_STATE_PATH.read_text(encoding="utf-8"))
 
-        return data if isinstance(data, dict) else {}
+        local_state = data if isinstance(data, dict) else {}
 
     except Exception:
 
-        return {}
+        local_state = {}
+
+    if remote_state:
+
+        local_state.update(remote_state)
+
+    return local_state
 
 
 
@@ -1890,6 +2002,8 @@ def save_dashboard_state() -> None:
     }
 
     DASHBOARD_STATE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    save_remote_dashboard_state(data)
 
 
 

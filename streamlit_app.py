@@ -755,6 +755,12 @@ def init_state() -> None:
 
         st.session_state.replacement_assignees = raw_replacement_assignees if isinstance(raw_replacement_assignees, dict) else {}
 
+    if "assignee_widget_reset_versions" not in st.session_state:
+
+        raw_assignee_widget_reset_versions = saved_state.get("assignee_widget_reset_versions", {})
+
+        st.session_state.assignee_widget_reset_versions = raw_assignee_widget_reset_versions if isinstance(raw_assignee_widget_reset_versions, dict) else {}
+
     if "sheet_sync_hashes" not in st.session_state:
 
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
@@ -1465,6 +1471,7 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         "machine_reset_at",
         "blade_reset_at",
         "replacement_assignees",
+        "assignee_widget_reset_versions",
         "replace_alert_history",
         "last_applied_upload_at",
         "last_snapshot_sync_key",
@@ -1970,6 +1977,8 @@ def save_dashboard_state() -> None:
         "completion_history": normalize_completion_history(st.session_state.get("completion_history", [])),
 
         "replacement_assignees": st.session_state.get("replacement_assignees", {}),
+
+        "assignee_widget_reset_versions": st.session_state.get("assignee_widget_reset_versions", {}),
 
         "sheet_sync_hashes": st.session_state.get("sheet_sync_hashes", {}),
 
@@ -4936,39 +4945,51 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 assignee_record_key = f"{row['machine']}|{row['displayBladeName']}"
 
-                assignee_widget_key = f"replacement_assignee_{row['id']}"
+                assignee_reset_version = st.session_state.get("assignee_widget_reset_versions", {}).get(assignee_record_key, 0)
+
+                assignee_widget_key = f"replacement_assignee_{row['id']}_{assignee_reset_version}"
 
                 assignee_defaults = st.session_state.get("replacement_assignees", {})
 
-                pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
-
-                if assignee_record_key in pending_clear_assignees:
+                if action_label == "교체완료":
 
                     assignee_defaults.pop(assignee_record_key, None)
 
                     st.session_state.replacement_assignees = assignee_defaults
 
-                    st.session_state[assignee_widget_key] = ""
+                    row_cols[7].markdown("&nbsp;", unsafe_allow_html=True)
 
-                    pending_clear_assignees.remove(assignee_record_key)
+                else:
 
-                    st.session_state.clear_assignee_record_keys = list(pending_clear_assignees)
+                    pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
 
-                if assignee_widget_key not in st.session_state:
+                    if assignee_record_key in pending_clear_assignees:
 
-                    st.session_state[assignee_widget_key] = assignee_defaults.get(assignee_record_key, "")
+                        assignee_defaults.pop(assignee_record_key, None)
 
-                row_cols[7].text_input(
+                        st.session_state.replacement_assignees = assignee_defaults
 
-                    "담당자",
+                        st.session_state[assignee_widget_key] = ""
 
-                    key=assignee_widget_key,
+                        pending_clear_assignees.remove(assignee_record_key)
 
-                    label_visibility="collapsed",
+                        st.session_state.clear_assignee_record_keys = list(pending_clear_assignees)
 
-                    placeholder="담당자",
+                    if assignee_widget_key not in st.session_state:
 
-                )
+                        st.session_state[assignee_widget_key] = assignee_defaults.get(assignee_record_key, "")
+
+                    row_cols[7].text_input(
+
+                        "담당자",
+
+                        key=assignee_widget_key,
+
+                        label_visibility="collapsed",
+
+                        placeholder="담당자",
+
+                    )
 
                 if action_label == "교체필요":
 
@@ -5011,6 +5032,12 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
                             pending_clear_assignees.add(assignee_record_key)
 
                             st.session_state.clear_assignee_record_keys = list(pending_clear_assignees)
+
+                            reset_versions = st.session_state.get("assignee_widget_reset_versions", {})
+
+                            reset_versions[assignee_record_key] = reset_versions.get(assignee_record_key, 0) + 1
+
+                            st.session_state.assignee_widget_reset_versions = reset_versions
 
                     st.rerun()
 

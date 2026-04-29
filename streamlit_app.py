@@ -4953,7 +4953,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
 
-                if action_label == "교체완료" or assignee_record_key in pending_clear_assignees:
+                if action_label != "교체필요" or assignee_record_key in pending_clear_assignees:
 
                     assignee_defaults.pop(assignee_record_key, None)
 

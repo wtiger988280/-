@@ -4951,45 +4951,39 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 assignee_defaults = st.session_state.get("replacement_assignees", {})
 
-                if action_label == "교체완료":
+                pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
+
+                if action_label == "교체완료" or assignee_record_key in pending_clear_assignees:
 
                     assignee_defaults.pop(assignee_record_key, None)
 
                     st.session_state.replacement_assignees = assignee_defaults
 
-                    row_cols[7].markdown("&nbsp;", unsafe_allow_html=True)
-
-                else:
-
-                    pending_clear_assignees = set(st.session_state.get("clear_assignee_record_keys", []))
-
-                    if assignee_record_key in pending_clear_assignees:
-
-                        assignee_defaults.pop(assignee_record_key, None)
-
-                        st.session_state.replacement_assignees = assignee_defaults
+                    if assignee_widget_key not in st.session_state or st.session_state.get(assignee_widget_key):
 
                         st.session_state[assignee_widget_key] = ""
+
+                    if assignee_record_key in pending_clear_assignees:
 
                         pending_clear_assignees.remove(assignee_record_key)
 
                         st.session_state.clear_assignee_record_keys = list(pending_clear_assignees)
 
-                    if assignee_widget_key not in st.session_state:
+                if assignee_widget_key not in st.session_state:
 
-                        st.session_state[assignee_widget_key] = assignee_defaults.get(assignee_record_key, "")
+                    st.session_state[assignee_widget_key] = assignee_defaults.get(assignee_record_key, "")
 
-                    row_cols[7].text_input(
+                row_cols[7].text_input(
 
-                        "담당자",
+                    "담당자",
 
-                        key=assignee_widget_key,
+                    key=assignee_widget_key,
 
-                        label_visibility="collapsed",
+                    label_visibility="collapsed",
 
-                        placeholder="담당자",
+                    placeholder="담당자",
 
-                    )
+                )
 
                 if action_label == "교체필요":
 

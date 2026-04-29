@@ -4448,6 +4448,12 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     note = str(note or "").strip()
 
+    if was_replace and not assignee:
+
+        st.session_state.send_result = f"{selected_machine} · {selected_blade} 담당자를 입력한 뒤 교체필요를 눌러주세요."
+
+        return
+
     if not was_replace and not assignee:
 
         st.session_state.send_result = f"{selected_machine} · {selected_blade} 조기 교체 담당자를 입력해 주세요."

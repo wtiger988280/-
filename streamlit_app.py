@@ -4982,6 +4982,8 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                     else:
 
+                        st.session_state.pop("normal_replacement_prompt", None)
+
                         handle_action(row["id"], assignee)
 
                     st.rerun()

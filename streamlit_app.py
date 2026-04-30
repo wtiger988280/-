@@ -1678,9 +1678,9 @@ def get_completion_history_key(entry: dict[str, Any]) -> str:
     )
 
 
-def update_completion_history_notes(note_updates: dict[str, str]) -> None:
+def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -> None:
 
-    if not note_updates:
+    if not field_updates:
 
         return
 
@@ -1690,9 +1690,15 @@ def update_completion_history_notes(note_updates: dict[str, str]) -> None:
 
         entry_key = get_completion_history_key(entry)
 
-        if entry_key in note_updates:
+        if entry_key in field_updates:
 
-            entry = {**entry, "비고": str(note_updates[entry_key]).strip()}
+            updates = field_updates[entry_key]
+
+            entry = {
+                **entry,
+                "담당자": str(updates.get("담당자", entry.get("담당자", ""))).strip(),
+                "비고": str(updates.get("비고", entry.get("비고", ""))).strip(),
+            }
 
         updated_history.append(entry)
 
@@ -5894,7 +5900,7 @@ def main() -> None:
 
                     hide_index=True,
 
-                    disabled=["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "_history_key"],
+                    disabled=["교체완료시각", "설비", "날물명", "교체 시점 사용량", "_history_key"],
 
                     column_config={"_history_key": None},
 
@@ -5902,9 +5908,12 @@ def main() -> None:
 
                 )
 
-                original_notes = {
+                original_fields = {
 
-                    str(row.get("_history_key", "")).strip(): str(row.get("비고", "")).strip()
+                    str(row.get("_history_key", "")).strip(): {
+                        "담당자": str(row.get("담당자", "")).strip(),
+                        "비고": str(row.get("비고", "")).strip(),
+                    }
 
                     for row in editable_completion_df.to_dict(orient="records")
 
@@ -5912,23 +5921,31 @@ def main() -> None:
 
                 }
 
-                note_updates = {
+                field_updates = {
 
-                    str(row.get("_history_key", "")).strip(): str(row.get("비고", "")).strip()
+                    str(row.get("_history_key", "")).strip(): {
+                        "담당자": str(row.get("담당자", "")).strip(),
+                        "비고": str(row.get("비고", "")).strip(),
+                    }
 
                     for row in edited_completion_df.to_dict(orient="records")
 
                     if str(row.get("_history_key", "")).strip()
 
-                    and str(row.get("비고", "")).strip() != original_notes.get(str(row.get("_history_key", "")).strip(), "")
+                    and (
+                        str(row.get("담당자", "")).strip() != original_fields.get(str(row.get("_history_key", "")).strip(), {}).get("담당자", "")
+                        or str(row.get("비고", "")).strip() != original_fields.get(str(row.get("_history_key", "")).strip(), {}).get("비고", "")
+                    )
 
                 }
 
-                if note_updates:
+                save_col, _ = st.columns([1, 5])
 
-                    update_completion_history_notes(note_updates)
+                if save_col.button("수정 저장", key="save_completion_fields", use_container_width=True):
 
-                    st.session_state.send_result = "교체완료 시점의 비고를 저장했습니다."
+                    update_completion_history_fields(field_updates)
+
+                    st.session_state.send_result = "교체완료 시점의 담당자와 비고를 저장했습니다."
 
                     st.rerun()
 

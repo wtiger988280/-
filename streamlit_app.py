@@ -1482,6 +1482,18 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
 
     try:
 
+        existing_state = load_remote_dashboard_state()
+
+        for merge_key in ["machine_reset_at", "blade_reset_at", "replace_alert_history"]:
+
+            existing_value = existing_state.get(merge_key, {})
+
+            next_value = data.get(merge_key, {})
+
+            if isinstance(existing_value, dict) and isinstance(next_value, dict):
+
+                data[merge_key] = {**existing_value, **next_value}
+
         rows = [
             [
                 key,
@@ -1561,7 +1573,7 @@ def save_completion_history(history: list[dict[str, Any]]) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    normalized = normalize_completion_history(history)
+    normalized = merge_completion_history(normalize_completion_history(history), load_remote_completion_history())
 
     COMPLETION_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -1910,17 +1922,7 @@ def format_sync_display_dataframe(df: pd.DataFrame):
 
         )
 
-    return display_df.style.hide(axis="index").set_properties(**{"text-align": "center"}).set_table_styles(
-
-        [
-
-            {"selector": "th", "props": [("text-align", "center")]},
-
-            {"selector": "td", "props": [("text-align", "center")]},
-
-        ]
-
-    )
+    return display_df
 
 
 
@@ -1960,6 +1962,15 @@ def save_dashboard_state() -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
+    completion_history = normalize_completion_history(st.session_state.get("completion_history", []))
+
+    blade_reset_at = rebuild_blade_reset_at_from_completion_history(
+        st.session_state.get("blade_reset_at", {}),
+        completion_history,
+    )
+
+    st.session_state.blade_reset_at = blade_reset_at
+
     data = {
 
         "equipment_data": st.session_state.get("equipment_data", INITIAL_RAW_DATA),
@@ -1974,7 +1985,7 @@ def save_dashboard_state() -> None:
 
         "sheet_sync_history": normalize_sheet_sync_history(st.session_state.get("sheet_sync_history", [])),
 
-        "completion_history": normalize_completion_history(st.session_state.get("completion_history", [])),
+        "completion_history": completion_history,
 
         "replacement_assignees": st.session_state.get("replacement_assignees", {}),
 
@@ -2002,7 +2013,7 @@ def save_dashboard_state() -> None:
 
         "machine_reset_at": st.session_state.get("machine_reset_at", {}),
 
-        "blade_reset_at": st.session_state.get("blade_reset_at", {}),
+        "blade_reset_at": blade_reset_at,
 
         "line_filter_toggle": st.session_state.get("line_filter_toggle", "all"),
 
@@ -5475,7 +5486,7 @@ def main() -> None:
 
             if not history_df.empty:
 
-                st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True)
+                st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True, hide_index=True)
 
             else:
 
@@ -5539,7 +5550,7 @@ def main() -> None:
 
             if not completion_df.empty:
 
-                st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True)
+                st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True, hide_index=True)
 
             else:
 

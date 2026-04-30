@@ -5902,17 +5902,29 @@ def main() -> None:
 
                 )
 
-                if st.button("비고 저장", key="save_completion_notes", use_container_width=True):
+                original_notes = {
 
-                    note_updates = {
+                    str(row.get("_history_key", "")).strip(): str(row.get("비고", "")).strip()
 
-                        str(row.get("_history_key", "")).strip(): str(row.get("비고", "")).strip()
+                    for row in editable_completion_df.to_dict(orient="records")
 
-                        for row in edited_completion_df.to_dict(orient="records")
+                    if str(row.get("_history_key", "")).strip()
 
-                        if str(row.get("_history_key", "")).strip()
+                }
 
-                    }
+                note_updates = {
+
+                    str(row.get("_history_key", "")).strip(): str(row.get("비고", "")).strip()
+
+                    for row in edited_completion_df.to_dict(orient="records")
+
+                    if str(row.get("_history_key", "")).strip()
+
+                    and str(row.get("비고", "")).strip() != original_notes.get(str(row.get("_history_key", "")).strip(), "")
+
+                }
+
+                if note_updates:
 
                     update_completion_history_notes(note_updates)
 

@@ -728,7 +728,10 @@ def init_state() -> None:
 
     if "completion_history" not in st.session_state:
 
-        raw_completion = saved_state.get("completion_history", load_completion_history())
+        raw_completion = merge_completion_history(
+            saved_state.get("completion_history", []),
+            load_completion_history(),
+        )
 
         st.session_state.completion_history = normalize_completion_history(raw_completion if isinstance(raw_completion, list) else [])
 

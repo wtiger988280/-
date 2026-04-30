@@ -766,12 +766,18 @@ def init_state() -> None:
         raw_machine_reset_at = saved_state.get("machine_reset_at", {})
 
         st.session_state.machine_reset_at = raw_machine_reset_at if isinstance(raw_machine_reset_at, dict) else {}
+    elif isinstance(saved_state.get("machine_reset_at", {}), dict):
+
+        st.session_state.machine_reset_at = saved_state.get("machine_reset_at", {})
 
     if "blade_reset_at" not in st.session_state:
 
         raw_blade_reset_at = saved_state.get("blade_reset_at", {})
 
         st.session_state.blade_reset_at = raw_blade_reset_at if isinstance(raw_blade_reset_at, dict) else {}
+    elif isinstance(saved_state.get("blade_reset_at", {}), dict):
+
+        st.session_state.blade_reset_at = saved_state.get("blade_reset_at", {})
 
     st.session_state.blade_reset_at = rebuild_blade_reset_at_from_completion_history(
         st.session_state.get("blade_reset_at", {}),

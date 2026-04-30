@@ -726,6 +726,14 @@ def init_state() -> None:
 
         st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
 
+    else:
+
+        persisted_history = load_sheet_sync_history()
+
+        if persisted_history:
+
+            st.session_state.sheet_sync_history = normalize_sheet_sync_history(persisted_history)
+
     if "completion_history" not in st.session_state:
 
         raw_completion = merge_completion_history(
@@ -734,6 +742,20 @@ def init_state() -> None:
         )
 
         st.session_state.completion_history = normalize_completion_history(raw_completion if isinstance(raw_completion, list) else [])
+
+    else:
+
+        persisted_completion = load_completion_history()
+
+        if persisted_completion:
+
+            st.session_state.completion_history = merge_completion_history(
+
+                st.session_state.get("completion_history", []),
+
+                persisted_completion,
+
+            )
 
     if "machine_reset_at" not in st.session_state:
 

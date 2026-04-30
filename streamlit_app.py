@@ -1160,7 +1160,7 @@ def load_sheet_sync_history() -> list[dict[str, Any]]:
 
     if not SHEET_SYNC_HISTORY_PATH.exists():
 
-        return normalize_sheet_sync_history(remote_history)
+        return remove_duplicate_zero_history_rows(remote_history)
 
     try:
 
@@ -1168,7 +1168,7 @@ def load_sheet_sync_history() -> list[dict[str, Any]]:
 
         if isinstance(data, list):
 
-            local_history = normalize_sheet_sync_history(data)
+            local_history = remove_duplicate_zero_history_rows(data)
 
             if local_history != data:
 
@@ -1180,7 +1180,7 @@ def load_sheet_sync_history() -> list[dict[str, Any]]:
 
     if remote_history or local_history:
 
-        return merge_sheet_sync_history(local_history, remote_history)
+        return remove_duplicate_zero_history_rows(merge_sheet_sync_history(local_history, remote_history))
 
     return []
 
@@ -1226,7 +1226,7 @@ def save_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    normalized = normalize_sheet_sync_history(history)
+    normalized = remove_duplicate_zero_history_rows(history)
 
     SHEET_SYNC_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -1243,7 +1243,7 @@ def save_remote_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 
     try:
 
-        normalized = normalize_sheet_sync_history(history)
+        normalized = remove_duplicate_zero_history_rows(history)
 
         columns = ["반영시각", "대상", "설비", "날물명", "데이터 기준일자", "반영 사용량(m)", "반영 사용량(회)"]
 
@@ -1676,6 +1676,16 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
                 return entry.get(key)
         return ""
 
+    def canonicalize_sync_time(value: Any) -> str:
+        raw = str(value or "").strip()
+        try:
+            parsed = pd.to_datetime(raw, errors="coerce")
+            if pd.isna(parsed):
+                return raw
+            return parsed.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return raw
+
     def is_date_like(value: str) -> bool:
         return len(value) == 10 and value[4:5] == "-" and value[7:8] == "-"
 
@@ -1719,7 +1729,7 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
         if not isinstance(entry, dict):
             continue
 
-        sync_at = str(pick(entry, "반영시각", "????", "??????")).strip()
+        sync_at = canonicalize_sync_time(pick(entry, "반영시각", "????", "??????"))
         raw_machine = str(pick(entry, "설비", "??", "???")).strip()
         raw_blade = str(pick(entry, "날물명", "???", "?????")).strip()
         target = str(pick(entry, "대상", "????", "????")).strip()
@@ -1763,7 +1773,40 @@ def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str
             "데이터 기준일자": start_date,
         })
 
-    return normalized
+    return collapse_duplicate_history_rows(normalized)
+
+
+def collapse_duplicate_history_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+
+    collapsed: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+
+    for row in history:
+
+        key = (
+            str(row.get("반영시각", "")).strip(),
+            str(row.get("대상", "")).strip(),
+            str(row.get("설비", "")).strip(),
+            str(row.get("날물명", "")).strip(),
+            str(row.get("데이터 기준일자", row.get("시작일", ""))).strip(),
+        )
+
+        current = collapsed.get(key)
+
+        if current is None:
+
+            collapsed[key] = row
+
+            continue
+
+        row_usage = abs(parse_numeric_value(row.get("반영 사용량(m)", 0))) + abs(parse_numeric_value(row.get("반영 사용량(회)", 0)))
+
+        current_usage = abs(parse_numeric_value(current.get("반영 사용량(m)", 0))) + abs(parse_numeric_value(current.get("반영 사용량(회)", 0)))
+
+        if row_usage > current_usage:
+
+            collapsed[key] = row
+
+    return list(collapsed.values())
 
 
 def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1802,7 +1845,7 @@ def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries
 
 
 
-    history_df = pd.DataFrame([*existing_rows, *new_rows])
+    history_df = pd.DataFrame(remove_duplicate_zero_history_rows([*existing_rows, *new_rows]))
 
     if history_df.empty:
 
@@ -1817,6 +1860,61 @@ def merge_sheet_sync_history(existing_history: list[dict[str, Any]], new_entries
     history_df = history_df.drop(columns=["_sort_time"], errors="ignore")
 
     return history_df.to_dict(orient="records")
+
+
+def remove_duplicate_zero_history_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+
+    rows = normalize_sheet_sync_history(history)
+
+    if not rows:
+
+        return []
+
+    key_columns = ["반영시각", "대상", "설비", "날물명", "데이터 기준일자"]
+
+    has_nonzero_usage: set[tuple[str, ...]] = set()
+
+    for row in rows:
+
+        key = tuple(str(row.get(column, "")).strip() for column in key_columns)
+
+        usage_m = parse_numeric_value(row.get("반영 사용량(m)", 0))
+
+        usage_count = parse_numeric_value(row.get("반영 사용량(회)", 0))
+
+        if usage_m != 0 or usage_count != 0:
+
+            has_nonzero_usage.add(key)
+
+    cleaned: list[dict[str, Any]] = []
+
+    seen_zero_keys: set[tuple[str, ...]] = set()
+
+    for row in rows:
+
+        key = tuple(str(row.get(column, "")).strip() for column in key_columns)
+
+        usage_m = parse_numeric_value(row.get("반영 사용량(m)", 0))
+
+        usage_count = parse_numeric_value(row.get("반영 사용량(회)", 0))
+
+        is_zero = usage_m == 0 and usage_count == 0
+
+        if is_zero and key in has_nonzero_usage:
+
+            continue
+
+        if is_zero and key in seen_zero_keys:
+
+            continue
+
+        if is_zero:
+
+            seen_zero_keys.add(key)
+
+        cleaned.append(row)
+
+    return cleaned
 
 
 

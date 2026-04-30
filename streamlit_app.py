@@ -1549,6 +1549,7 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         "replacement_assignees",
         "assignee_widget_reset_versions",
         "replace_alert_history",
+        "sheet_sync_hashes",
         "last_applied_upload_at",
         "last_snapshot_sync_key",
         "boring_snapshot_loaded_key",
@@ -1560,7 +1561,7 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
 
         existing_state = load_remote_dashboard_state()
 
-        for merge_key in ["machine_reset_at", "blade_reset_at", "replace_alert_history"]:
+        for merge_key in ["machine_reset_at", "blade_reset_at", "replace_alert_history", "sheet_sync_hashes"]:
 
             existing_value = existing_state.get(merge_key, {})
 
@@ -1649,11 +1650,57 @@ def save_completion_history(history: list[dict[str, Any]]) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    normalized = merge_completion_history(normalize_completion_history(history), load_remote_completion_history())
+    normalized = merge_completion_history(load_remote_completion_history(), normalize_completion_history(history))
 
     COMPLETION_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
     save_remote_completion_history(normalized)
+
+
+def get_completion_history_key(entry: dict[str, Any]) -> str:
+
+    normalized = normalize_completion_history([entry])
+
+    if not normalized:
+
+        return ""
+
+    row = normalized[0]
+
+    return "|".join(
+        [
+            str(row.get("교체완료시각", "")).strip(),
+            str(row.get("설비", "")).strip(),
+            str(row.get("날물명", "")).strip(),
+            str(row.get("교체 시점 사용량", "")).strip(),
+            str(row.get("담당자", "")).strip(),
+        ]
+    )
+
+
+def update_completion_history_notes(note_updates: dict[str, str]) -> None:
+
+    if not note_updates:
+
+        return
+
+    updated_history: list[dict[str, Any]] = []
+
+    for entry in normalize_completion_history(st.session_state.get("completion_history", [])):
+
+        entry_key = get_completion_history_key(entry)
+
+        if entry_key in note_updates:
+
+            entry = {**entry, "비고": str(note_updates[entry_key]).strip()}
+
+        updated_history.append(entry)
+
+    st.session_state.completion_history = updated_history
+
+    save_completion_history(updated_history)
+
+    save_dashboard_state()
 
 
 
@@ -4108,7 +4155,7 @@ def sync_from_google_sheet(
 
     sync_hash = hashlib.sha1(response.content).hexdigest()
 
-    hash_bucket_key = f"content::{target_machine}"
+    hash_bucket_key = "content"
 
     existing_hashes = st.session_state.sheet_sync_hashes.get(hash_bucket_key, [])
 
@@ -4116,7 +4163,19 @@ def sync_from_google_sheet(
 
         existing_hashes = [existing_hashes]
 
-    is_duplicate_sync = sync_hash in existing_hashes
+    all_known_hashes: set[str] = set()
+
+    for hash_values in st.session_state.sheet_sync_hashes.values():
+
+        if isinstance(hash_values, str):
+
+            all_known_hashes.add(hash_values)
+
+        elif isinstance(hash_values, list):
+
+            all_known_hashes.update(str(value) for value in hash_values)
+
+    is_duplicate_sync = sync_hash in existing_hashes or sync_hash in all_known_hashes
 
     df = pd.read_csv(BytesIO(response.content))
 
@@ -4504,6 +4563,60 @@ def sync_from_google_sheet(
 
     ]
 
+    def sync_entry_signature(entry: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
+
+        return (
+
+            str(entry.get("대상", "")).strip(),
+
+            str(entry.get("설비", "")).strip(),
+
+            str(entry.get("날물명", "")).strip(),
+
+            str(entry.get("반영 사용량(m)", "")).strip(),
+
+            str(entry.get("반영 사용량(회)", "")).strip(),
+
+            str(entry.get("시작일", entry.get("데이터 기준일자", ""))).strip(),
+
+        )
+
+    existing_entry_signatures = {
+
+        sync_entry_signature(entry)
+
+        for entry in normalize_sheet_sync_history(st.session_state.get("sheet_sync_history", []))
+
+    }
+
+    new_entry_signatures = {sync_entry_signature(entry) for entry in history_entries}
+
+    is_duplicate_by_existing_history = bool(new_entry_signatures) and new_entry_signatures.issubset(existing_entry_signatures)
+
+    if is_duplicate_by_existing_history:
+
+        is_duplicate_sync = True
+
+        st.session_state.equipment_data = reconcile_edge_usage_from_history(
+
+            st.session_state.equipment_data,
+
+            st.session_state.get("sheet_sync_history", []),
+
+            st.session_state.get("usage_reset_at", ""),
+
+        )
+
+        st.session_state.equipment_data = reconcile_boring_usage_from_history(
+
+            st.session_state.equipment_data,
+
+            st.session_state.get("sheet_sync_history", []),
+
+            st.session_state.get("usage_reset_at", ""),
+
+        )
+
     should_replace_boring_history = False
 
     if history_entries and (not is_duplicate_sync or should_replace_boring_history):
@@ -4623,6 +4736,11 @@ def sync_from_google_sheet(
     st.session_state.last_sheet_sync_details = normalize_last_sheet_sync_details(sync_details)
 
     if not is_duplicate_sync:
+
+        updated_hashes = [*existing_hashes, sync_hash]
+
+        st.session_state.sheet_sync_hashes[hash_bucket_key] = updated_hashes[-50:]
+    elif sync_hash not in all_known_hashes:
 
         updated_hashes = [*existing_hashes, sync_hash]
 
@@ -5758,7 +5876,49 @@ def main() -> None:
 
             if not completion_df.empty:
 
-                st.dataframe(format_sync_display_dataframe(completion_df), use_container_width=True, hide_index=True)
+                editable_completion_df = format_sync_display_dataframe(completion_df)
+
+                editable_completion_df["_history_key"] = completion_df.apply(
+
+                    lambda row: get_completion_history_key(row.to_dict()),
+
+                    axis=1,
+
+                )
+
+                edited_completion_df = st.data_editor(
+
+                    editable_completion_df,
+
+                    use_container_width=True,
+
+                    hide_index=True,
+
+                    disabled=["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "_history_key"],
+
+                    column_config={"_history_key": None},
+
+                    key="completion_note_editor",
+
+                )
+
+                if st.button("비고 저장", key="save_completion_notes", use_container_width=True):
+
+                    note_updates = {
+
+                        str(row.get("_history_key", "")).strip(): str(row.get("비고", "")).strip()
+
+                        for row in edited_completion_df.to_dict(orient="records")
+
+                        if str(row.get("_history_key", "")).strip()
+
+                    }
+
+                    update_completion_history_notes(note_updates)
+
+                    st.session_state.send_result = "교체완료 시점의 비고를 저장했습니다."
+
+                    st.rerun()
 
             else:
 

@@ -5882,72 +5882,69 @@ def main() -> None:
 
             if not completion_df.empty:
 
-                editable_completion_df = format_sync_display_dataframe(completion_df)
+                display_completion_df = format_sync_display_dataframe(completion_df)
 
-                editable_completion_df["_history_key"] = completion_df.apply(
+                header_cols = st.columns([1.35, 0.9, 1.15, 1.05, 0.8, 1.9])
 
-                    lambda row: get_completion_history_key(row.to_dict()),
+                for col, label in zip(header_cols, ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]):
 
-                    axis=1,
+                    col.caption(label)
 
-                )
+                for _, completion_row in display_completion_df.iterrows():
 
-                edited_completion_df = st.data_editor(
+                    row_dict = completion_row.to_dict()
 
-                    editable_completion_df,
+                    history_key = get_completion_history_key(row_dict)
 
-                    use_container_width=True,
+                    safe_key = hashlib.sha1(history_key.encode("utf-8")).hexdigest()[:16]
 
-                    hide_index=True,
+                    row_cols = st.columns([1.35, 0.9, 1.15, 1.05, 0.8, 1.9])
 
-                    disabled=["교체완료시각", "설비", "날물명", "교체 시점 사용량", "_history_key"],
+                    row_cols[0].write(row_dict.get("교체완료시각", ""))
 
-                    column_config={"_history_key": None},
+                    row_cols[1].write(row_dict.get("설비", ""))
 
-                    key="completion_note_editor",
+                    row_cols[2].write(row_dict.get("날물명", ""))
 
-                )
+                    row_cols[3].write(row_dict.get("교체 시점 사용량", ""))
 
-                original_fields = {
+                    row_cols[4].write(row_dict.get("담당자", ""))
 
-                    str(row.get("_history_key", "")).strip(): {
-                        "담당자": str(row.get("담당자", "")).strip(),
-                        "비고": str(row.get("비고", "")).strip(),
-                    }
+                    note_cols = row_cols[5].columns([4, 1])
 
-                    for row in editable_completion_df.to_dict(orient="records")
+                    note_value = note_cols[0].text_input(
 
-                    if str(row.get("_history_key", "")).strip()
+                        "비고",
 
-                }
+                        value=str(row_dict.get("비고", "")).strip(),
 
-                field_updates = {
+                        key=f"completion_note_{safe_key}",
 
-                    str(row.get("_history_key", "")).strip(): {
-                        "담당자": str(row.get("담당자", "")).strip(),
-                        "비고": str(row.get("비고", "")).strip(),
-                    }
+                        label_visibility="collapsed",
 
-                    for row in edited_completion_df.to_dict(orient="records")
-
-                    if str(row.get("_history_key", "")).strip()
-
-                    and (
-                        str(row.get("담당자", "")).strip() != original_fields.get(str(row.get("_history_key", "")).strip(), {}).get("담당자", "")
-                        or str(row.get("비고", "")).strip() != original_fields.get(str(row.get("_history_key", "")).strip(), {}).get("비고", "")
                     )
 
-                }
+                    if note_cols[1].button("저장", key=f"save_completion_note_{safe_key}", use_container_width=True):
 
-                save_col, _ = st.columns([1, 5])
+                        update_completion_history_fields(
 
-                if save_col.button("수정 저장", key="save_completion_fields", use_container_width=True):
+                            {
 
-                    update_completion_history_fields(field_updates)
+                                history_key: {
 
-                    st.session_state.send_result = "교체완료 시점의 담당자와 비고를 저장했습니다."
+                                    "담당자": str(row_dict.get("담당자", "")).strip(),
 
-                    st.rerun()
+                                    "비고": note_value,
+
+                                }
+
+                            }
+
+                        )
+
+                        st.session_state.send_result = "교체완료 시점의 비고를 저장했습니다."
+
+                        st.rerun()
 
             else:
 

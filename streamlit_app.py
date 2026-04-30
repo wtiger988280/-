@@ -1208,6 +1208,57 @@ def save_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 
     SHEET_SYNC_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    save_remote_sheet_sync_history(normalized)
+
+
+def save_remote_sheet_sync_history(history: list[dict[str, Any]]) -> None:
+
+    spreadsheet = get_google_spreadsheet()
+
+    if spreadsheet is None:
+
+        return
+
+    try:
+
+        normalized = normalize_sheet_sync_history(history)
+
+        columns = ["반영시각", "대상", "설비", "날물명", "데이터 기준일자", "반영 사용량(m)", "반영 사용량(회)"]
+
+        rows = [
+
+            [
+
+                str(entry.get(column, entry.get("시작일", "") if column == "데이터 기준일자" else "")).strip()
+
+                for column in columns
+
+            ]
+
+            for entry in normalized
+
+        ]
+
+        worksheet = get_or_create_worksheet(
+
+            spreadsheet,
+
+            SYNC_HISTORY_WORKSHEET_NAME,
+
+            rows=max(len(rows) + 100, 1000),
+
+            cols=len(columns) + 2,
+
+        )
+
+        worksheet.clear()
+
+        worksheet.update([columns, *rows], "A1", value_input_option="RAW")
+
+    except Exception:
+
+        return
+
 
 
 

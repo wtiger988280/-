@@ -2090,9 +2090,39 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
         key = (str(item.get("machine", "")).strip(), get_display_blade_name(item))
 
-        if str(item.get("line", "")).strip() != "\uc5e3\uc9c0" or key not in aggregated:
+        if str(item.get("line", "")).strip() != "\uc5e3\uc9c0":
 
             next_rows.append(item)
+
+            continue
+
+        blade_reset_key = f"{key[0]}|{key[1]}"
+
+        if key not in aggregated:
+
+            if str(blade_reset_at.get(blade_reset_key, "")).strip():
+
+                next_rows.append(
+
+                    {
+
+                        **item,
+
+                        "usage": 0,
+
+                        "quality": 0,
+
+                        "standard": EDGE_FIXED_STANDARDS.get(item["machine"], item["standard"]),
+
+                        "actionStep": "completed",
+
+                    }
+
+                )
+
+            else:
+
+                next_rows.append(item)
 
             continue
 
@@ -2203,7 +2233,11 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
 
-        action_step = "" if total_usage > 0 else item.get("actionStep", "")
+        blade_reset_key = f"{machine}|{blade_name}"
+
+        has_blade_reset = bool(str(blade_reset_at.get(blade_reset_key, "")).strip())
+
+        action_step = "" if total_usage > 0 else ("completed" if has_blade_reset else item.get("actionStep", ""))
 
         next_rows.append(
 

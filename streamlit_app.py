@@ -540,7 +540,7 @@ def reset_completion_history_data() -> None:
 
     st.session_state.completion_history = []
 
-    save_completion_history([])
+    save_completion_history([], force_clear=True)
 
     st.session_state.send_result = "교체완료 시점을 리셋했습니다."
 
@@ -1453,7 +1453,7 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
 
 
-def save_remote_completion_history(history: list[dict[str, Any]]) -> None:
+def save_remote_completion_history(history: list[dict[str, Any]], force_clear: bool = False) -> None:
 
     spreadsheet = get_google_spreadsheet()
 
@@ -1464,6 +1464,10 @@ def save_remote_completion_history(history: list[dict[str, Any]]) -> None:
     try:
 
         normalized = normalize_completion_history(history)
+
+        if not normalized and not force_clear:
+
+            return
 
         columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
 
@@ -1656,15 +1660,29 @@ def rebuild_blade_reset_at_from_completion_history(
 
 
 
-def save_completion_history(history: list[dict[str, Any]]) -> None:
+def save_completion_history(history: list[dict[str, Any]], force_clear: bool = False) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    normalized = merge_completion_history(load_remote_completion_history(), normalize_completion_history(history))
+    remote_history = [] if force_clear else load_remote_completion_history()
+
+    normalized = merge_completion_history(remote_history, normalize_completion_history(history))
+
+    if not normalized and not force_clear:
+
+        local_fallback = load_completion_history()
+
+        if local_fallback:
+
+            normalized = local_fallback
+
+        else:
+
+            return
 
     COMPLETION_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    save_remote_completion_history(normalized)
+    save_remote_completion_history(normalized, force_clear=force_clear)
 
 
 def get_completion_history_key(entry: dict[str, Any]) -> str:
@@ -2200,6 +2218,10 @@ def save_dashboard_state() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     completion_history = normalize_completion_history(st.session_state.get("completion_history", []))
+
+    if not completion_history:
+
+        completion_history = load_completion_history()
 
     blade_reset_at = rebuild_blade_reset_at_from_completion_history(
         st.session_state.get("blade_reset_at", {}),

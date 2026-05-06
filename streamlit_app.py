@@ -56,6 +56,8 @@ SHEET_SYNC_HISTORY_PATH = LOG_DIR / "sheet_sync_history.json"
 
 COMPLETION_HISTORY_PATH = LOG_DIR / "completion_history.json"
 
+COMPLETION_HISTORY_ARCHIVE_PATH = LOG_DIR / "completion_history_archive.json"
+
 DASHBOARD_STATE_PATH = LOG_DIR / "dashboard_state.json"
 
 UPLOAD_INFO_WORKSHEET_NAME = "DASHBOARD_UPLOAD_INFO"
@@ -1299,9 +1301,23 @@ def load_completion_history() -> list[dict[str, Any]]:
 
     remote_history = load_remote_completion_history()
 
+    archive_history: list[dict[str, Any]] = []
+
+    if COMPLETION_HISTORY_ARCHIVE_PATH.exists():
+
+        try:
+
+            archive_data = json.loads(COMPLETION_HISTORY_ARCHIVE_PATH.read_text(encoding="utf-8"))
+
+            archive_history = normalize_completion_history(archive_data if isinstance(archive_data, list) else [])
+
+        except Exception:
+
+            archive_history = []
+
     if not COMPLETION_HISTORY_PATH.exists():
 
-        return remote_history
+        return merge_completion_history(archive_history, remote_history)
 
     try:
 
@@ -1309,11 +1325,11 @@ def load_completion_history() -> list[dict[str, Any]]:
 
         local_history = normalize_completion_history(data if isinstance(data, list) else [])
 
-        return merge_completion_history(local_history, remote_history)
+        return merge_completion_history(archive_history, local_history, remote_history)
 
     except Exception:
 
-        return remote_history
+        return merge_completion_history(archive_history, remote_history)
 
 
 
@@ -1666,7 +1682,21 @@ def save_completion_history(history: list[dict[str, Any]], force_clear: bool = F
 
     remote_history = [] if force_clear else load_remote_completion_history()
 
-    normalized = merge_completion_history(remote_history, normalize_completion_history(history))
+    archive_history: list[dict[str, Any]] = []
+
+    if not force_clear and COMPLETION_HISTORY_ARCHIVE_PATH.exists():
+
+        try:
+
+            archive_data = json.loads(COMPLETION_HISTORY_ARCHIVE_PATH.read_text(encoding="utf-8"))
+
+            archive_history = normalize_completion_history(archive_data if isinstance(archive_data, list) else [])
+
+        except Exception:
+
+            archive_history = []
+
+    normalized = merge_completion_history(archive_history, remote_history, normalize_completion_history(history))
 
     if not normalized and not force_clear:
 
@@ -1681,6 +1711,10 @@ def save_completion_history(history: list[dict[str, Any]], force_clear: bool = F
             return
 
     COMPLETION_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if normalized:
+
+        COMPLETION_HISTORY_ARCHIVE_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
     save_remote_completion_history(normalized, force_clear=force_clear)
 

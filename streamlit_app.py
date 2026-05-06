@@ -172,7 +172,7 @@ EDGE_MACHINE_DEFAULTS = [
 
     {"line": "엣지", "machine": "엣지 #1", "spindle": "H1", "bladeCode": "AT-013-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-03", "usage": 0, "standard": 15000, "avg7d": 2000, "quality": 0},
 
-    {"line": "엣지", "machine": "엣지 #2", "spindle": "H2", "bladeCode": "AT-014-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-05", "usage": 0, "standard": 15000, "avg7d": 2000, "quality": 0},
+    {"line": "엣지", "machine": "엣지 #2", "spindle": "H2", "bladeCode": "AT-014-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-05", "usage": 0, "standard": 30000, "avg7d": 2000, "quality": 0},
 
     {"line": "엣지", "machine": "엣지 #3,4", "spindle": "H1/H3", "bladeCode": "AT-015-016-B", "bladeName": "AT 날물(후면)", "installDate": "2026-03-06", "usage": 0, "standard": 90000, "avg7d": 15000, "quality": 0},
 
@@ -608,7 +608,7 @@ EDGE_FIXED_STANDARDS = {
 
     "엣지 #1": 15000,
 
-    "엣지 #2": 15000,
+    "엣지 #2": 30000,
 
     "엣지 #3,4": 90000,
 

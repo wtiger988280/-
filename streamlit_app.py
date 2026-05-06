@@ -1487,6 +1487,30 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
         columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
 
+        worksheet = get_or_create_worksheet(
+            spreadsheet,
+            COMPLETION_HISTORY_WORKSHEET_NAME,
+            rows=max(len(normalized) + 100, 1000),
+            cols=len(columns) + 2,
+        )
+
+        if not force_clear:
+
+            try:
+
+                existing_remote = normalize_completion_history(worksheet.get_all_records())
+
+            except Exception:
+
+                # Never risk clearing the remote completion archive if it cannot be read first.
+                return
+
+            normalized = merge_completion_history(existing_remote, normalized)
+
+            if not normalized:
+
+                return
+
         rows = [
             [
                 str(entry.get(column, "")).strip()
@@ -1494,13 +1518,6 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
             ]
             for entry in normalized
         ]
-
-        worksheet = get_or_create_worksheet(
-            spreadsheet,
-            COMPLETION_HISTORY_WORKSHEET_NAME,
-            rows=max(len(rows) + 100, 1000),
-            cols=len(columns) + 2,
-        )
 
         worksheet.clear()
 

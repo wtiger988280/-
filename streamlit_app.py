@@ -1915,7 +1915,9 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
         updated_history,
     )
 
-    save_completion_history(updated_history)
+    # Time edits change the history row key, so replace the persisted table instead
+    # of merging with old remote/archive rows that would resurrect the previous time.
+    save_completion_history(updated_history, force_clear=True)
 
     save_dashboard_state()
 

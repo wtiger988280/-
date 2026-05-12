@@ -2075,9 +2075,7 @@ def add_manual_completion_history(entry: dict[str, Any]) -> None:
         next_history,
     )
 
-    append_remote_completion_history(row)
-
-    save_completion_history(next_history)
+    save_completion_history(next_history, force_clear=True)
 
     save_dashboard_state()
 
@@ -5333,10 +5331,6 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
         [completion_entry],
     )
 
-    append_remote_completion_history(completion_entry)
-
-
-
     if was_replace:
 
         message = f"{selected_machine} · {selected_blade} 교체 완료 처리되었습니다."
@@ -5386,7 +5380,7 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     st.session_state.send_result = message
 
-    save_completion_history(st.session_state.get("completion_history", []))
+    save_completion_history(st.session_state.get("completion_history", []), force_clear=True)
 
     save_dashboard_state()
 

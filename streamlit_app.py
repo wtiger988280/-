@@ -1810,6 +1810,8 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         return
 
     persist_keys = [
+        "completion_history",
+        "completion_history_deleted_keys",
         "usage_reset_at",
         "machine_reset_at",
         "blade_reset_at",
@@ -2524,6 +2526,26 @@ def load_dashboard_state() -> dict[str, Any]:
 
     if not DASHBOARD_STATE_PATH.exists():
 
+        remote_deleted_keys = {
+            str(key).strip()
+            for key in remote_state.get("completion_history_deleted_keys", [])
+            if str(key).strip()
+        }
+
+        if remote_deleted_keys:
+
+            save_completion_history_deleted_keys(remote_deleted_keys)
+
+            remote_state["completion_history"] = filter_deleted_completion_history(
+                normalize_completion_history(remote_state.get("completion_history", [])),
+                remote_deleted_keys,
+            )
+
+            remote_state["blade_reset_at"] = rebuild_blade_reset_at_from_completion_history(
+                remote_state.get("blade_reset_at", {}) if isinstance(remote_state.get("blade_reset_at", {}), dict) else {},
+                remote_state.get("completion_history", []),
+            )
+
         return remote_state
 
     try:
@@ -2580,6 +2602,11 @@ def load_dashboard_state() -> dict[str, Any]:
                 local_state["completion_history"],
             )
 
+        elif deleted_keys:
+
+            local_state["completion_history"] = []
+            local_state["completion_history_deleted_keys"] = sorted(deleted_keys)
+
     return local_state
 
 
@@ -2591,6 +2618,10 @@ def save_dashboard_state() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     completion_history = normalize_completion_history(st.session_state.get("completion_history", []))
+    completion_history = filter_deleted_completion_history(
+        completion_history,
+        load_completion_history_deleted_keys(),
+    )
 
     if not completion_history:
 

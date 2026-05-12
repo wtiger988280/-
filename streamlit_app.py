@@ -1569,15 +1569,21 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
             cols=len(columns) + 2,
         )
 
-        try:
+        if force_clear:
 
-            existing_archive = normalize_completion_history(archive_worksheet.get_all_records())
+            archive_normalized = normalized
 
-        except Exception:
+        else:
 
-            existing_archive = []
+            try:
 
-        archive_normalized = merge_completion_history(existing_archive, normalized)
+                existing_archive = normalize_completion_history(archive_worksheet.get_all_records())
+
+            except Exception:
+
+                existing_archive = []
+
+            archive_normalized = merge_completion_history(existing_archive, normalized)
 
         archive_rows = [
             [

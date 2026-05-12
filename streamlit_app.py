@@ -66,6 +66,8 @@ SYNC_HISTORY_WORKSHEET_NAME = "DASHBOARD_SYNC_HISTORY"
 
 COMPLETION_HISTORY_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY"
 
+COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY_ARCHIVE"
+
 PERSIST_STATE_WORKSHEET_NAME = "DASHBOARD_PERSIST_STATE"
 
 KST = ZoneInfo("Asia/Seoul")
@@ -544,11 +546,9 @@ def reset_sheet_sync_history_data() -> None:
 
 def reset_completion_history_data() -> None:
 
-    st.session_state.completion_history = []
+    st.session_state.completion_history = load_completion_history()
 
-    save_completion_history([], force_clear=True)
-
-    st.session_state.send_result = "교체완료 시점을 리셋했습니다."
+    st.session_state.send_result = "교체완료 이력은 보존 대상으로 설정되어 있어 삭제하지 않았습니다."
 
     save_dashboard_state()
 
@@ -1461,15 +1461,29 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
         return []
 
+    remote_rows: list[dict[str, Any]] = []
+
     try:
 
         worksheet = spreadsheet.worksheet(COMPLETION_HISTORY_WORKSHEET_NAME)
 
-        return normalize_completion_history(worksheet.get_all_records())
+        remote_rows = normalize_completion_history(worksheet.get_all_records())
 
     except Exception:
 
-        return []
+        remote_rows = []
+
+    try:
+
+        archive_worksheet = spreadsheet.worksheet(COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME)
+
+        archive_rows = normalize_completion_history(archive_worksheet.get_all_records())
+
+    except Exception:
+
+        archive_rows = []
+
+    return merge_completion_history(archive_rows, remote_rows)
 
 
 
@@ -1526,6 +1540,91 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
         worksheet.clear()
 
         worksheet.update([columns, *rows], "A1", value_input_option="RAW")
+
+        archive_worksheet = get_or_create_worksheet(
+            spreadsheet,
+            COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME,
+            rows=max(len(rows) + 100, 1000),
+            cols=len(columns) + 2,
+        )
+
+        try:
+
+            existing_archive = normalize_completion_history(archive_worksheet.get_all_records())
+
+        except Exception:
+
+            existing_archive = []
+
+        archive_normalized = merge_completion_history(existing_archive, normalized)
+
+        archive_rows = [
+            [
+                str(entry.get(column, "")).strip()
+                for column in columns
+            ]
+            for entry in archive_normalized
+        ]
+
+        archive_worksheet.clear()
+
+        archive_worksheet.update([columns, *archive_rows], "A1", value_input_option="RAW")
+
+    except Exception:
+
+        return
+
+
+def append_remote_completion_history(entry: dict[str, Any]) -> None:
+
+    spreadsheet = get_google_spreadsheet()
+
+    if spreadsheet is None:
+
+        return
+
+    normalized = normalize_completion_history([entry])
+
+    if not normalized:
+
+        return
+
+    row = normalized[0]
+
+    columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+
+    row_values = [str(row.get(column, "")).strip() for column in columns]
+
+    try:
+
+        for worksheet_name in [COMPLETION_HISTORY_WORKSHEET_NAME, COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME]:
+
+            worksheet = get_or_create_worksheet(
+                spreadsheet,
+                worksheet_name,
+                rows=1000,
+                cols=len(columns) + 2,
+            )
+
+            values = worksheet.get_all_values()
+
+            if not values:
+
+                worksheet.update([columns], "A1", value_input_option="RAW")
+
+                records = []
+
+            else:
+
+                records = normalize_completion_history(worksheet.get_all_records())
+
+            existing_keys = {get_completion_history_key(existing) for existing in records}
+
+            if get_completion_history_key(row) in existing_keys:
+
+                continue
+
+            worksheet.append_row(row_values, value_input_option="RAW")
 
     except Exception:
 
@@ -4967,7 +5066,13 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     }
 
-    st.session_state.completion_history = normalize_completion_history([completion_entry, *st.session_state.get("completion_history", [])])
+    st.session_state.completion_history = merge_completion_history(
+        load_completion_history(),
+        st.session_state.get("completion_history", []),
+        [completion_entry],
+    )
+
+    append_remote_completion_history(completion_entry)
 
 
 

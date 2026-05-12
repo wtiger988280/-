@@ -1344,6 +1344,25 @@ def save_remote_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 def load_completion_history() -> list[dict[str, Any]]:
 
     remote_history = load_remote_completion_history()
+    local_history: list[dict[str, Any]] = []
+
+    if COMPLETION_HISTORY_PATH.exists():
+
+        try:
+
+            data = json.loads(COMPLETION_HISTORY_PATH.read_text(encoding="utf-8"))
+
+            local_history = normalize_completion_history(data if isinstance(data, list) else [])
+
+        except Exception:
+
+            local_history = []
+
+    # Treat the main local/remote histories as the source of truth. The archive is
+    # only a fallback so edited old rows cannot resurrect after a refresh.
+    if local_history or remote_history:
+
+        return merge_completion_history(local_history, remote_history)
 
     archive_history: list[dict[str, Any]] = []
 
@@ -1359,21 +1378,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
             archive_history = []
 
-    if not COMPLETION_HISTORY_PATH.exists():
-
-        return merge_completion_history(archive_history, remote_history)
-
-    try:
-
-        data = json.loads(COMPLETION_HISTORY_PATH.read_text(encoding="utf-8"))
-
-        local_history = normalize_completion_history(data if isinstance(data, list) else [])
-
-        return merge_completion_history(archive_history, local_history, remote_history)
-
-    except Exception:
-
-        return merge_completion_history(archive_history, remote_history)
+    return merge_completion_history(archive_history)
 
 
 def load_completion_history_deleted_keys() -> set[str]:
@@ -1594,7 +1599,11 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
         archive_rows = []
 
-    return merge_completion_history(archive_rows, remote_rows)
+    if remote_rows:
+
+        return merge_completion_history(remote_rows)
+
+    return merge_completion_history(archive_rows)
 
 
 
@@ -6459,6 +6468,14 @@ def main() -> None:
                     )
 
                 }
+
+                if note_updates:
+
+                    update_completion_history_fields(note_updates)
+
+                    st.session_state.send_result = "교체완료 시점 수정 내용을 자동 저장했습니다."
+
+                    st.rerun()
 
                 save_col, _ = st.columns([1, 5])
 

@@ -1906,6 +1906,9 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
             entry = {
                 **entry,
                 "교체완료시각": str(updates.get("교체완료시각", entry.get("교체완료시각", ""))).strip(),
+                "설비": normalize_machine_name(str(updates.get("설비", entry.get("설비", ""))).strip()),
+                "날물명": str(updates.get("날물명", entry.get("날물명", ""))).strip(),
+                "교체 시점 사용량": str(updates.get("교체 시점 사용량", entry.get("교체 시점 사용량", ""))).strip(),
                 "담당자": str(updates.get("담당자", entry.get("담당자", ""))).strip(),
                 "비고": str(updates.get("비고", entry.get("비고", ""))).strip(),
             }
@@ -1921,8 +1924,8 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
         updated_history,
     )
 
-    # Time edits change the history row key, so replace the persisted table instead
-    # of merging with old remote/archive rows that would resurrect the previous time.
+    # Edited rows can change their identity columns, including completion time.
+    # Replace persisted local/remote history so stale rows do not come back on refresh.
     save_completion_history(updated_history, force_clear=True)
 
     save_dashboard_state()
@@ -6253,7 +6256,7 @@ def main() -> None:
 
                     hide_index=True,
 
-                    disabled=["설비", "날물명", "교체 시점 사용량", "담당자", "_history_key"],
+                    disabled=["_history_key"],
 
                     column_config={"_history_key": None},
 
@@ -6265,6 +6268,10 @@ def main() -> None:
 
                     str(row.get("_history_key", "")).strip(): {
                         "교체완료시각": str(row.get("교체완료시각", "")).strip(),
+                        "설비": str(row.get("설비", "")).strip(),
+                        "날물명": str(row.get("날물명", "")).strip(),
+                        "교체 시점 사용량": str(row.get("교체 시점 사용량", "")).strip(),
+                        "담당자": str(row.get("담당자", "")).strip(),
                         "비고": str(row.get("비고", "")).strip(),
                     }
 
@@ -6280,6 +6287,12 @@ def main() -> None:
 
                         "교체완료시각": str(row.get("교체완료시각", "")).strip(),
 
+                        "설비": str(row.get("설비", "")).strip(),
+
+                        "날물명": str(row.get("날물명", "")).strip(),
+
+                        "교체 시점 사용량": str(row.get("교체 시점 사용량", "")).strip(),
+
                         "담당자": str(row.get("담당자", "")).strip(),
 
                         "비고": str(row.get("비고", "")).strip(),
@@ -6291,10 +6304,11 @@ def main() -> None:
                     if str(row.get("_history_key", "")).strip()
 
                     and (
-                        str(row.get("교체완료시각", "")).strip()
-                        != original_values.get(str(row.get("_history_key", "")).strip(), {}).get("교체완료시각", "")
-                        or str(row.get("비고", "")).strip()
-                        != original_values.get(str(row.get("_history_key", "")).strip(), {}).get("비고", "")
+                        any(
+                            str(row.get(column, "")).strip()
+                            != original_values.get(str(row.get("_history_key", "")).strip(), {}).get(column, "")
+                            for column in ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+                        )
                     )
 
                 }
@@ -6305,7 +6319,7 @@ def main() -> None:
 
                     update_completion_history_fields(note_updates)
 
-                    st.session_state.send_result = "교체완료 시점의 시간과 비고를 저장했습니다."
+                    st.session_state.send_result = "교체완료 시점 수정 내용을 저장했습니다."
 
                     st.rerun()
 

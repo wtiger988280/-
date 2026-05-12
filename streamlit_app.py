@@ -556,6 +556,27 @@ def reset_completion_history_data() -> None:
 
 
 
+def preserve_completion_history_data() -> None:
+
+    preserved_history = merge_completion_history(
+        load_completion_history(),
+        st.session_state.get("completion_history", []),
+    )
+
+    st.session_state.completion_history = preserved_history
+
+    st.session_state.blade_reset_at = rebuild_blade_reset_at_from_completion_history(
+        st.session_state.get("blade_reset_at", {}),
+        preserved_history,
+    )
+
+    save_completion_history(preserved_history)
+
+    save_dashboard_state()
+
+    st.session_state.send_result = "교체완료 시점을 로컬과 원격 백업에 저장했습니다. 다음날 다시 열어도 유지됩니다."
+
+
 EDGE_UPLOAD_RULES = {
 
     "엣지 #1": {"periodDays": 15},
@@ -5808,6 +5829,12 @@ def main() -> None:
 
             st.rerun()
 
+        if st.button("교체완료 시점 저장", use_container_width=True):
+
+            preserve_completion_history_data()
+
+            st.rerun()
+
 
 
     if st.session_state.send_result:
@@ -6030,6 +6057,11 @@ def main() -> None:
 
         st.caption("교체완료 시점")
 
+        st.session_state.completion_history = merge_completion_history(
+            load_completion_history(),
+            st.session_state.get("completion_history", []),
+        )
+
         if st.session_state.get("completion_history"):
 
             completion_df = pd.DataFrame(normalize_completion_history(st.session_state.get("completion_history", [])))
@@ -6045,16 +6077,6 @@ def main() -> None:
                 completion_df["교체 시점 사용량"] = completion_df["교체 시점 사용량"].replace("None", "")
 
             completion_df["설비"] = completion_df["설비"].apply(normalize_machine_name)
-
-            completion_df = completion_df[
-
-                completion_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
-
-            ]
-
-            if active_line_filter != "all" and active_machine_filter != "전체":
-
-                completion_df = completion_df[completion_df["설비"] == active_machine_filter]
 
             completion_filter_cols = st.columns(3)
 

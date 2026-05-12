@@ -2438,7 +2438,30 @@ def load_dashboard_state() -> dict[str, Any]:
 
     if remote_state:
 
+        local_completion_history = normalize_completion_history(local_state.get("completion_history", []))
+
+        remote_completion_history = normalize_completion_history(remote_state.get("completion_history", []))
+
+        local_blade_reset_at = local_state.get("blade_reset_at", {}) if isinstance(local_state.get("blade_reset_at", {}), dict) else {}
+
+        remote_blade_reset_at = remote_state.get("blade_reset_at", {}) if isinstance(remote_state.get("blade_reset_at", {}), dict) else {}
+
         local_state.update(remote_state)
+
+        merged_completion_history = merge_completion_history(
+            local_completion_history,
+            remote_completion_history,
+            load_completion_history(),
+        )
+
+        if merged_completion_history:
+
+            local_state["completion_history"] = merged_completion_history
+
+            local_state["blade_reset_at"] = rebuild_blade_reset_at_from_completion_history(
+                {**remote_blade_reset_at, **local_blade_reset_at},
+                merged_completion_history,
+            )
 
     return local_state
 

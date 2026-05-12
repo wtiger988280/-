@@ -1915,6 +1915,48 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
 
 
 
+def add_manual_completion_history(entry: dict[str, Any]) -> None:
+
+    normalized = normalize_completion_history([entry])
+
+    if not normalized:
+
+        st.session_state.send_result = "교체완료 시점에 추가할 내용을 입력해 주세요."
+
+        return
+
+    row = normalized[0]
+
+    required_fields = ["교체완료시각", "설비", "날물명"]
+
+    if any(not str(row.get(field, "")).strip() for field in required_fields):
+
+        st.session_state.send_result = "교체완료시각, 설비, 날물명은 꼭 입력해 주세요."
+
+        return
+
+    next_history = merge_completion_history(
+        load_completion_history(),
+        st.session_state.get("completion_history", []),
+        [row],
+    )
+
+    st.session_state.completion_history = next_history
+
+    st.session_state.blade_reset_at = rebuild_blade_reset_at_from_completion_history(
+        st.session_state.get("blade_reset_at", {}),
+        next_history,
+    )
+
+    append_remote_completion_history(row)
+
+    save_completion_history(next_history)
+
+    save_dashboard_state()
+
+    st.session_state.send_result = "교체완료 시점에 수동 이력을 추가하고 저장했습니다."
+
+
 def normalize_sheet_sync_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     blade_map = {
@@ -6056,6 +6098,60 @@ def main() -> None:
         st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
 
         st.caption("교체완료 시점")
+
+        with st.expander("교체완료 시점 직접 입력", expanded=False):
+
+            with st.form("manual_completion_history_form", clear_on_submit=True):
+
+                manual_cols_1 = st.columns([1.2, 1, 1])
+
+                manual_completed_at = manual_cols_1[0].text_input(
+                    "교체완료시각",
+                    value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    placeholder="예: 2026-05-08 20:40:00",
+                )
+
+                manual_machine = manual_cols_1[1].text_input(
+                    "설비",
+                    placeholder="예: 엣지 #2",
+                )
+
+                manual_blade = manual_cols_1[2].text_input(
+                    "날물명",
+                    placeholder="예: AT 날물(후면)",
+                )
+
+                manual_cols_2 = st.columns([1, 1, 2])
+
+                manual_usage = manual_cols_2[0].text_input(
+                    "교체 시점 사용량",
+                    placeholder="예: 11293.19m 또는 15110 회",
+                )
+
+                manual_assignee = manual_cols_2[1].text_input(
+                    "담당자",
+                    placeholder="예: 마니",
+                )
+
+                manual_note = manual_cols_2[2].text_input(
+                    "비고",
+                    placeholder="예: 잔이바리로 인한 날물 교체",
+                )
+
+                if st.form_submit_button("교체완료 시점 추가", use_container_width=True):
+
+                    add_manual_completion_history(
+                        {
+                            "교체완료시각": manual_completed_at,
+                            "설비": manual_machine,
+                            "날물명": manual_blade,
+                            "교체 시점 사용량": manual_usage,
+                            "담당자": manual_assignee,
+                            "비고": manual_note,
+                        }
+                    )
+
+                    st.rerun()
 
         st.session_state.completion_history = merge_completion_history(
             load_completion_history(),

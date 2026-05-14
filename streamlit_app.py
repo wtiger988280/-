@@ -252,6 +252,10 @@ def build_initial_raw_data() -> list[dict[str, Any]]:
 
                 standard = 50000
 
+            if machine_config["machine"] == "포인트 #3" and blade_spec["bladeName"] == "Φ8(관통) 날물":
+
+                standard = 30000
+
             if machine_config["line"] == "런닝" and blade_spec["bladeName"] == "Φ20 날물":
 
                 standard = 50000
@@ -4174,6 +4178,10 @@ def get_boring_standard(machine: Any, blade_name: Any) -> int:
     if normalized_blade == "Φ20 날물" and normalized_machine.startswith("런닝"):
 
         return 50000
+
+    if normalized_blade == "Φ8(관통) 날물" and normalized_machine == "포인트 #3":
+
+        return 30000
 
     if normalized_blade == "Φ8(관통) 날물" and normalized_machine.startswith("런닝"):
 

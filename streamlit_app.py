@@ -80,6 +80,41 @@ KST = ZoneInfo("Asia/Seoul")
 
 STREAMLIT_APP_REVISION = "2026-04-27 16:05"
 
+COMPLETION_HISTORY_FALLBACK_ROWS = [
+    {
+        "교체완료시각": "2026-05-09 08:00:52",
+        "설비": "엣지 #6",
+        "날물명": "AT 날물(후면)",
+        "교체 시점 사용량": "31881.92m",
+        "담당자": "박철웅",
+        "비고": "잔이바리로 인한 날물 교체",
+    },
+    {
+        "교체완료시각": "2026-05-09 08:00:36",
+        "설비": "엣지 #6",
+        "날물명": "AT 날물(전면)",
+        "교체 시점 사용량": "32161.48m",
+        "담당자": "박철웅",
+        "비고": "잔이바리로 인한 날물 교체",
+    },
+    {
+        "교체완료시각": "2026-05-08 20:42:33",
+        "설비": "엣지 #3,4",
+        "날물명": "AT 날물(후면)",
+        "교체 시점 사용량": "68911.32m",
+        "담당자": "김정철",
+        "비고": "잔이바리로 인한 날물 교체",
+    },
+    {
+        "교체완료시각": "2026-05-08 20:40:21",
+        "설비": "엣지 #2",
+        "날물명": "AT 날물(후면)",
+        "교체 시점 사용량": "19229.95m",
+        "담당자": "마니",
+        "비고": "잔이바리로 인한 날물 교체",
+    },
+]
+
 BORING_WORKSHEET_GID_BY_SYNC_TIME = {
 
     "2026-04-23 10:15:08": "1062250441",
@@ -1366,7 +1401,7 @@ def load_completion_history() -> list[dict[str, Any]]:
     # only a fallback so edited old rows cannot resurrect after a refresh.
     if local_history or remote_history:
 
-        return merge_completion_history(local_history, remote_history)
+        return merge_completion_history(local_history, remote_history, COMPLETION_HISTORY_FALLBACK_ROWS)
 
     archive_history: list[dict[str, Any]] = []
 
@@ -1382,7 +1417,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
             archive_history = []
 
-    return merge_completion_history(archive_history)
+    return merge_completion_history(archive_history, COMPLETION_HISTORY_FALLBACK_ROWS)
 
 
 def load_completion_history_deleted_keys() -> set[str]:
@@ -1715,9 +1750,9 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
     if remote_rows:
 
-        return merge_completion_history(remote_rows)
+        return merge_completion_history(remote_rows, COMPLETION_HISTORY_FALLBACK_ROWS)
 
-    return merge_completion_history(archive_rows)
+    return merge_completion_history(archive_rows, COMPLETION_HISTORY_FALLBACK_ROWS)
 
 
 
@@ -2731,7 +2766,10 @@ def save_dashboard_state() -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    completion_history = normalize_completion_history(st.session_state.get("completion_history", []))
+    completion_history = merge_completion_history(
+        st.session_state.get("completion_history", []),
+        COMPLETION_HISTORY_FALLBACK_ROWS,
+    )
 
     if not completion_history:
 
@@ -6085,6 +6123,8 @@ def main() -> None:
     st.title("\ub0a0\ubb3c \uad50\uccb4\uad00\ub9ac \ub300\uc2dc\ubcf4\ub4dc")
 
     st.caption("FURSYS · \ucda9\uc8fc \uacf5\uc7a5 · \ud488\uc9c8\ubcf4\uc99d\ud300")
+
+    st.caption(f"? ??: {STREAMLIT_APP_REVISION}")
 
 
 

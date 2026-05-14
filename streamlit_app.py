@@ -1623,6 +1623,51 @@ def worksheet_store_values_to_completion_history(values: list[list[Any]]) -> lis
     return normalize_completion_history(rows)
 
 
+def append_completion_history_store(spreadsheet, history: list[dict[str, Any]]) -> None:
+
+    normalized = normalize_completion_history(history)
+
+    if not normalized:
+
+        return
+
+    store_worksheet = get_or_create_worksheet(
+        spreadsheet,
+        COMPLETION_HISTORY_STORE_WORKSHEET_NAME,
+        rows=max(len(normalized) + 100, 1000),
+        cols=2,
+    )
+
+    values = store_worksheet.get_all_values()
+
+    if not values:
+
+        store_worksheet.update([["payload"]], "A1", value_input_option="RAW")
+
+    existing_payloads = {
+        str(row[0]).strip()
+        for row in values[1:]
+        if row and str(row[0]).strip()
+    }
+
+    rows_to_append = []
+
+    for entry in normalized:
+
+        payload = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+
+        if payload in existing_payloads:
+
+            continue
+
+        existing_payloads.add(payload)
+        rows_to_append.append([payload])
+
+    if rows_to_append:
+
+        store_worksheet.append_rows(rows_to_append, value_input_option="RAW")
+
+
 
 def load_remote_completion_history() -> list[dict[str, Any]]:
 
@@ -1692,21 +1737,7 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
             return
 
-        store_worksheet = get_or_create_worksheet(
-            spreadsheet,
-            COMPLETION_HISTORY_STORE_WORKSHEET_NAME,
-            rows=max(len(normalized) + 100, 1000),
-            cols=2,
-        )
-
-        store_rows = [
-            [json.dumps(entry, ensure_ascii=False)]
-            for entry in normalized
-        ]
-
-        store_worksheet.clear()
-
-        store_worksheet.update([["payload"], *store_rows], "A1", value_input_option="RAW")
+        append_completion_history_store(spreadsheet, normalized)
 
         columns = COMPLETION_HISTORY_COLUMNS
 
@@ -1971,15 +2002,10 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
 def merge_completion_history(*history_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     merged: dict[tuple[str, str, str, str], dict[str, Any]] = {}
-    deleted_keys = load_completion_history_deleted_keys()
 
     for history in history_lists:
 
         for entry in normalize_completion_history(history):
-
-            if get_completion_history_identity(entry) in deleted_keys:
-
-                continue
 
             key = (
                 str(entry.get("교체완료시각", "")).strip(),
@@ -2116,7 +2142,6 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
         updated_history.append(entry)
 
     updated_history = merge_completion_history(updated_history)
-    updated_history = filter_deleted_completion_history(updated_history, deleted_keys)
 
     st.session_state.completion_history = updated_history
 
@@ -2127,7 +2152,7 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
 
     # Edited rows can change their identity columns, including completion time.
     # Replace persisted local/remote history so stale rows do not come back on refresh.
-    save_completion_history_deleted_keys(deleted_keys)
+    save_completion_history_deleted_keys(set())
     save_completion_history(updated_history, force_clear=True)
 
     save_dashboard_state()
@@ -2665,19 +2690,7 @@ def load_dashboard_state() -> dict[str, Any]:
 
         remote_completion_history = normalize_completion_history(remote_state.get("completion_history", []))
 
-        deleted_keys = (
-            load_completion_history_deleted_keys()
-            | {
-                str(key).strip()
-                for key in local_state.get("completion_history_deleted_keys", [])
-                if str(key).strip()
-            }
-            | {
-                str(key).strip()
-                for key in remote_state.get("completion_history_deleted_keys", [])
-                if str(key).strip()
-            }
-        )
+        deleted_keys: set[str] = set()
 
         save_completion_history_deleted_keys(deleted_keys)
 
@@ -2695,7 +2708,7 @@ def load_dashboard_state() -> dict[str, Any]:
 
         if merged_completion_history:
 
-            local_state["completion_history"] = filter_deleted_completion_history(merged_completion_history, deleted_keys)
+            local_state["completion_history"] = merged_completion_history
             local_state["completion_history_deleted_keys"] = sorted(deleted_keys)
 
             local_state["blade_reset_at"] = rebuild_blade_reset_at_from_completion_history(
@@ -2719,10 +2732,6 @@ def save_dashboard_state() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     completion_history = normalize_completion_history(st.session_state.get("completion_history", []))
-    completion_history = filter_deleted_completion_history(
-        completion_history,
-        load_completion_history_deleted_keys(),
-    )
 
     if not completion_history:
 

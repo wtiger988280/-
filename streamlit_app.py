@@ -78,7 +78,6 @@ PERSIST_STATE_WORKSHEET_NAME = "DASHBOARD_PERSIST_STATE"
 
 KST = ZoneInfo("Asia/Seoul")
 
-STREAMLIT_APP_REVISION = "2026-04-27 16:05"
 
 COMPLETION_HISTORY_FALLBACK_ROWS = [
     {
@@ -6124,7 +6123,6 @@ def main() -> None:
 
     st.caption("FURSYS · \ucda9\uc8fc \uacf5\uc7a5 · \ud488\uc9c8\ubcf4\uc99d\ud300")
 
-    st.caption(f"? ??: {STREAMLIT_APP_REVISION}")
 
 
 

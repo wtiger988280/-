@@ -72,6 +72,8 @@ COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY_ARCHIV
 
 COMPLETION_HISTORY_COLUMNS = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
 
+COMPLETION_HISTORY_STORE_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY_STORE"
+
 PERSIST_STATE_WORKSHEET_NAME = "DASHBOARD_PERSIST_STATE"
 
 KST = ZoneInfo("Asia/Seoul")
@@ -1590,6 +1592,37 @@ def worksheet_values_to_completion_history(values: list[list[Any]]) -> list[dict
     return normalize_completion_history(rows)
 
 
+def worksheet_store_values_to_completion_history(values: list[list[Any]]) -> list[dict[str, Any]]:
+
+    rows: list[dict[str, Any]] = []
+
+    for raw_row in values[1:]:
+
+        if not raw_row:
+
+            continue
+
+        raw_payload = str(raw_row[0]).strip()
+
+        if not raw_payload:
+
+            continue
+
+        try:
+
+            decoded = json.loads(raw_payload)
+
+            if isinstance(decoded, dict):
+
+                rows.append(decoded)
+
+        except Exception:
+
+            continue
+
+    return normalize_completion_history(rows)
+
+
 
 def load_remote_completion_history() -> list[dict[str, Any]]:
 
@@ -1600,6 +1633,20 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
         return []
 
     remote_rows: list[dict[str, Any]] = []
+
+    try:
+
+        store_worksheet = spreadsheet.worksheet(COMPLETION_HISTORY_STORE_WORKSHEET_NAME)
+
+        store_rows = worksheet_store_values_to_completion_history(store_worksheet.get_all_values())
+
+        if store_rows:
+
+            return merge_completion_history(store_rows)
+
+    except Exception:
+
+        pass
 
     try:
 
@@ -1644,6 +1691,22 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
         if not normalized:
 
             return
+
+        store_worksheet = get_or_create_worksheet(
+            spreadsheet,
+            COMPLETION_HISTORY_STORE_WORKSHEET_NAME,
+            rows=max(len(normalized) + 100, 1000),
+            cols=2,
+        )
+
+        store_rows = [
+            [json.dumps(entry, ensure_ascii=False)]
+            for entry in normalized
+        ]
+
+        store_worksheet.clear()
+
+        store_worksheet.update([["payload"], *store_rows], "A1", value_input_option="RAW")
 
         columns = COMPLETION_HISTORY_COLUMNS
 

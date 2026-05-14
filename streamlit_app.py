@@ -70,6 +70,8 @@ COMPLETION_HISTORY_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY"
 
 COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY_ARCHIVE"
 
+COMPLETION_HISTORY_COLUMNS = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+
 PERSIST_STATE_WORKSHEET_NAME = "DASHBOARD_PERSIST_STATE"
 
 KST = ZoneInfo("Asia/Seoul")
@@ -1568,6 +1570,26 @@ def get_or_create_worksheet(spreadsheet, title: str, rows: int = 1000, cols: int
         return spreadsheet.add_worksheet(title=title, rows=str(rows), cols=str(cols))
 
 
+def worksheet_values_to_completion_history(values: list[list[Any]]) -> list[dict[str, Any]]:
+
+    rows: list[dict[str, Any]] = []
+
+    for raw_row in values[1:]:
+
+        padded = [*raw_row, *[""] * len(COMPLETION_HISTORY_COLUMNS)]
+
+        row = {
+            column: str(padded[index]).strip()
+            for index, column in enumerate(COMPLETION_HISTORY_COLUMNS)
+        }
+
+        if any(row.values()):
+
+            rows.append(row)
+
+    return normalize_completion_history(rows)
+
+
 
 def load_remote_completion_history() -> list[dict[str, Any]]:
 
@@ -1583,7 +1605,7 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
         worksheet = spreadsheet.worksheet(COMPLETION_HISTORY_WORKSHEET_NAME)
 
-        remote_rows = normalize_completion_history(worksheet.get_all_records())
+        remote_rows = worksheet_values_to_completion_history(worksheet.get_all_values())
 
     except Exception:
 
@@ -1593,7 +1615,7 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
         archive_worksheet = spreadsheet.worksheet(COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME)
 
-        archive_rows = normalize_completion_history(archive_worksheet.get_all_records())
+        archive_rows = worksheet_values_to_completion_history(archive_worksheet.get_all_values())
 
     except Exception:
 
@@ -1619,11 +1641,11 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
         normalized = normalize_completion_history(history)
 
-        if not normalized and not force_clear:
+        if not normalized:
 
             return
 
-        columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+        columns = COMPLETION_HISTORY_COLUMNS
 
         worksheet = get_or_create_worksheet(
             spreadsheet,
@@ -1636,7 +1658,7 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
             try:
 
-                existing_remote = normalize_completion_history(worksheet.get_all_records())
+                existing_remote = worksheet_values_to_completion_history(worksheet.get_all_values())
 
             except Exception:
 
@@ -1676,7 +1698,7 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
             try:
 
-                existing_archive = normalize_completion_history(archive_worksheet.get_all_records())
+                existing_archive = worksheet_values_to_completion_history(archive_worksheet.get_all_values())
 
             except Exception:
 
@@ -1839,6 +1861,15 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
 
         existing_state = load_remote_dashboard_state()
 
+        existing_completion = existing_state.get("completion_history", [])
+
+        if (
+            not normalize_completion_history(data.get("completion_history", []))
+            and normalize_completion_history(existing_completion if isinstance(existing_completion, list) else [])
+        ):
+
+            data["completion_history"] = existing_completion
+
         for merge_key in ["machine_reset_at", "blade_reset_at", "replace_alert_history", "sheet_sync_hashes"]:
 
             existing_value = existing_state.get(merge_key, {})
@@ -1951,7 +1982,7 @@ def save_completion_history(history: list[dict[str, Any]], force_clear: bool = F
 
     normalized = merge_completion_history(archive_history, remote_history, normalize_completion_history(history))
 
-    if not normalized and not force_clear:
+    if not normalized:
 
         local_fallback = load_completion_history()
 
@@ -6366,13 +6397,11 @@ def main() -> None:
 
             completion_df["설비"] = completion_df["설비"].apply(normalize_machine_name)
 
-            completion_filter_cols = st.columns(3)
-
-            completion_df = apply_date_dropdown_filter(completion_df, "교체완료시각", "completion", completion_filter_cols[0])
+            completion_filter_cols = st.columns(2)
 
             completion_machine_options = ["전체", *sorted([value for value in completion_df["설비"].dropna().astype(str).unique() if value.strip()])]
 
-            selected_completion_machine = completion_filter_cols[1].selectbox("설비", completion_machine_options, key="completion_machine_filter")
+            selected_completion_machine = completion_filter_cols[0].selectbox("설비", completion_machine_options, key="completion_machine_filter")
 
             if selected_completion_machine != "전체":
 
@@ -6380,7 +6409,7 @@ def main() -> None:
 
             completion_blade_options = ["전체", *sorted([value for value in completion_df["날물명"].dropna().astype(str).unique() if value.strip()])]
 
-            selected_completion_blade = completion_filter_cols[2].selectbox("날물명", completion_blade_options, key="completion_blade_filter")
+            selected_completion_blade = completion_filter_cols[1].selectbox("날물명", completion_blade_options, key="completion_blade_filter")
 
             if selected_completion_blade != "전체":
 

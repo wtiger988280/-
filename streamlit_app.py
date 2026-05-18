@@ -70,7 +70,7 @@ COMPLETION_HISTORY_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY"
 
 COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY_ARCHIVE"
 
-COMPLETION_HISTORY_COLUMNS = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+COMPLETION_HISTORY_COLUMNS = ["교체완료시각", "설비", "날물명", "기준값", "교체 시점 사용량", "담당자", "비고"]
 
 COMPLETION_HISTORY_STORE_WORKSHEET_NAME = "DASHBOARD_COMPLETION_HISTORY_STORE"
 
@@ -1443,6 +1443,32 @@ def get_completion_history_identity(entry: dict[str, Any]) -> str:
     )
 
 
+def get_completion_standard_label(machine: Any, blade_name: Any) -> str:
+
+    normalized_machine = normalize_machine_name(machine)
+    normalized_blade = str(blade_name or "").strip()
+
+    try:
+        for row in st.session_state.get("equipment_data", []):
+            row_machine = normalize_machine_name(row.get("machine", ""))
+            row_blade = get_display_blade_name(row)
+            if row_machine == normalized_machine and row_blade == normalized_blade:
+                return format_cycle_value(row, parse_numeric_value(row.get("standard", 0)))
+    except Exception:
+        pass
+
+    if normalized_machine.startswith("엣지"):
+        standard = EDGE_FIXED_STANDARDS.get(normalized_machine, 0)
+        if standard:
+            return f"{round(standard):,}m"
+
+    if normalized_machine.startswith(("수직", "포인트", "양면", "런닝")):
+        standard = get_boring_standard(normalized_machine, normalized_blade)
+        return f"{standard:,} 회"
+
+    return ""
+
+
 def filter_deleted_completion_history(history: list[dict[str, Any]], deleted_keys: set[str] | None = None) -> list[dict[str, Any]]:
 
     return history
@@ -1467,6 +1493,8 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
         blade_name = str(entry.get("날물명", entry.get("???", ""))).strip()
 
+        standard_label = str(entry.get("기준값", entry.get("standard", ""))).strip()
+
         usage_label = str(entry.get("교체 시점 사용량", entry.get("?? ?? ???", ""))).strip()
 
         assignee = str(entry.get("담당자", entry.get("담당", ""))).strip()
@@ -1477,6 +1505,10 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
             continue
 
+        if not standard_label:
+
+            standard_label = get_completion_standard_label(machine, blade_name)
+
         normalized.append(
 
             {
@@ -1486,6 +1518,8 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
                 "설비": normalize_machine_name(machine),
 
                 "날물명": blade_name,
+
+                "기준값": standard_label,
 
                 "교체 시점 사용량": usage_label,
 
@@ -1568,14 +1602,31 @@ def worksheet_values_to_completion_history(values: list[list[Any]]) -> list[dict
 
     rows: list[dict[str, Any]] = []
 
+    if not values:
+
+        return rows
+
+    header = [str(value).strip() for value in values[0]]
+
+    has_named_header = any(column in header for column in COMPLETION_HISTORY_COLUMNS)
+
     for raw_row in values[1:]:
 
-        padded = [*raw_row, *[""] * len(COMPLETION_HISTORY_COLUMNS)]
+        if has_named_header:
 
-        row = {
-            column: str(padded[index]).strip()
-            for index, column in enumerate(COMPLETION_HISTORY_COLUMNS)
-        }
+            row = {
+                column: str(raw_row[header.index(column)]).strip() if column in header and header.index(column) < len(raw_row) else ""
+                for column in COMPLETION_HISTORY_COLUMNS
+            }
+
+        else:
+
+            old_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+            padded = [*raw_row, *[""] * len(old_columns)]
+            row = {
+                column: str(padded[index]).strip()
+                for index, column in enumerate(old_columns)
+            }
 
         if any(row.values()):
 
@@ -1811,7 +1862,7 @@ def append_remote_completion_history(entry: dict[str, Any]) -> None:
 
     row = normalized[0]
 
-    columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+    columns = COMPLETION_HISTORY_COLUMNS
 
     row_values = [str(row.get(column, "")).strip() for column in columns]
 
@@ -2102,6 +2153,7 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
                 "교체완료시각": str(updates.get("교체완료시각", entry.get("교체완료시각", ""))).strip(),
                 "설비": normalize_machine_name(str(updates.get("설비", entry.get("설비", ""))).strip()),
                 "날물명": str(updates.get("날물명", entry.get("날물명", ""))).strip(),
+                "기준값": str(updates.get("기준값", entry.get("기준값", ""))).strip(),
                 "교체 시점 사용량": str(updates.get("교체 시점 사용량", entry.get("교체 시점 사용량", ""))).strip(),
                 "담당자": str(updates.get("담당자", entry.get("담당자", ""))).strip(),
                 "비고": str(updates.get("비고", entry.get("비고", ""))).strip(),
@@ -5370,6 +5422,8 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
         "날물명": selected_blade,
 
+        "기준값": format_cycle_value(selected_item, selected_standard),
+
         "교체 시점 사용량": completion_usage_label,
 
         "담당자": assignee,
@@ -6367,19 +6421,24 @@ def main() -> None:
                     placeholder="예: AT 날물(후면)",
                 )
 
-                manual_cols_2 = st.columns([1, 1, 2])
+                manual_cols_2 = st.columns([1, 1, 1, 2])
 
-                manual_usage = manual_cols_2[0].text_input(
+                manual_standard = manual_cols_2[0].text_input(
+                    "기준값",
+                    placeholder="비우면 자동 계산",
+                )
+
+                manual_usage = manual_cols_2[1].text_input(
                     "교체 시점 사용량",
                     placeholder="예: 11293.19m 또는 15110 회",
                 )
 
-                manual_assignee = manual_cols_2[1].text_input(
+                manual_assignee = manual_cols_2[2].text_input(
                     "담당자",
                     placeholder="예: 마니",
                 )
 
-                manual_note = manual_cols_2[2].text_input(
+                manual_note = manual_cols_2[3].text_input(
                     "비고",
                     placeholder="예: 잔이바리로 인한 날물 교체",
                 )
@@ -6391,6 +6450,7 @@ def main() -> None:
                             "교체완료시각": manual_completed_at,
                             "설비": manual_machine,
                             "날물명": manual_blade,
+                            "기준값": manual_standard,
                             "교체 시점 사용량": manual_usage,
                             "담당자": manual_assignee,
                             "비고": manual_note,
@@ -6408,7 +6468,7 @@ def main() -> None:
 
             completion_df = pd.DataFrame(normalize_completion_history(st.session_state.get("completion_history", [])))
 
-            ordered_columns = ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+            ordered_columns = ["교체완료시각", "설비", "날물명", "기준값", "교체 시점 사용량", "담당자", "비고"]
 
             completion_df = completion_df[[column for column in ordered_columns if column in completion_df.columns]]
 
@@ -6472,6 +6532,7 @@ def main() -> None:
                         "교체완료시각": str(row.get("교체완료시각", "")).strip(),
                         "설비": str(row.get("설비", "")).strip(),
                         "날물명": str(row.get("날물명", "")).strip(),
+                        "기준값": str(row.get("기준값", "")).strip(),
                         "교체 시점 사용량": str(row.get("교체 시점 사용량", "")).strip(),
                         "담당자": str(row.get("담당자", "")).strip(),
                         "비고": str(row.get("비고", "")).strip(),
@@ -6492,6 +6553,7 @@ def main() -> None:
                         "설비": str(row.get("설비", "")).strip(),
 
                         "날물명": str(row.get("날물명", "")).strip(),
+                        "기준값": str(row.get("기준값", "")).strip(),
 
                         "교체 시점 사용량": str(row.get("교체 시점 사용량", "")).strip(),
 
@@ -6509,7 +6571,7 @@ def main() -> None:
                         any(
                             str(row.get(column, "")).strip()
                             != original_values.get(str(row.get("_history_key", "")).strip(), {}).get(column, "")
-                            for column in ["교체완료시각", "설비", "날물명", "교체 시점 사용량", "담당자", "비고"]
+                            for column in ["교체완료시각", "설비", "날물명", "기준값", "교체 시점 사용량", "담당자", "비고"]
                         )
                     )
 

@@ -2080,6 +2080,17 @@ def rebuild_blade_reset_at_from_completion_history(
     return rebuilt
 
 
+def get_noted_completion_targets(history: list[dict[str, Any]] | None = None) -> set[str]:
+
+    source_history = history if history is not None else st.session_state.get("completion_history", [])
+
+    return {
+        f"{normalize_machine_name(entry.get('설비', ''))}|{str(entry.get('날물명', '')).strip()}"
+        for entry in normalize_completion_history(source_history)
+        if str(entry.get("비고", "")).strip()
+    }
+
+
 
 def save_completion_history(history: list[dict[str, Any]], force_clear: bool = False) -> None:
 
@@ -2186,14 +2197,7 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
 
 def clear_completed_action_steps_for_noted_completion_history(history: list[dict[str, Any]]) -> bool:
 
-    noted_targets = {
-        (
-            normalize_machine_name(entry.get("설비", "")),
-            str(entry.get("날물명", "")).strip(),
-        )
-        for entry in normalize_completion_history(history)
-        if str(entry.get("비고", "")).strip()
-    }
+    noted_targets = get_noted_completion_targets(history)
 
     if not noted_targets:
 
@@ -2204,10 +2208,7 @@ def clear_completed_action_steps_for_noted_completion_history(history: list[dict
 
     for item in st.session_state.get("equipment_data", []):
 
-        item_key = (
-            normalize_machine_name(item.get("machine", "")),
-            get_display_blade_name(item),
-        )
+        item_key = f"{normalize_machine_name(item.get('machine', ''))}|{get_display_blade_name(item)}"
 
         if item_key in noted_targets and item.get("actionStep") == "completed":
 
@@ -2857,6 +2858,10 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
     blade_reset_at = st.session_state.get("blade_reset_at", {})
 
+    noted_completion_targets = get_noted_completion_targets()
+
+    noted_completion_targets = get_noted_completion_targets()
+
     for entry in normalize_sheet_sync_history(history):
 
         sync_at = str(entry.get("\ubc18\uc601\uc2dc\uac01", "")).strip()
@@ -2931,7 +2936,7 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
                         "standard": EDGE_FIXED_STANDARDS.get(item["machine"], item["standard"]),
 
-                        "actionStep": "completed",
+                        "actionStep": "" if blade_reset_key in noted_completion_targets else "completed",
 
                     }
 
@@ -3054,7 +3059,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         has_blade_reset = bool(str(blade_reset_at.get(blade_reset_key, "")).strip())
 
-        action_step = "" if total_usage > 0 else ("completed" if has_blade_reset else item.get("actionStep", ""))
+        action_step = "" if total_usage > 0 or blade_reset_key in noted_completion_targets else ("completed" if has_blade_reset else item.get("actionStep", ""))
 
         next_rows.append(
 

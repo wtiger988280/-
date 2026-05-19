@@ -2860,8 +2860,6 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
     noted_completion_targets = get_noted_completion_targets()
 
-    noted_completion_targets = get_noted_completion_targets()
-
     for entry in normalize_sheet_sync_history(history):
 
         sync_at = str(entry.get("\ubc18\uc601\uc2dc\uac01", "")).strip()
@@ -2984,6 +2982,8 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
     machine_reset_at = st.session_state.get("machine_reset_at", {})
 
     blade_reset_at = st.session_state.get("blade_reset_at", {})
+
+    noted_completion_targets = get_noted_completion_targets()
 
     for entry in normalize_sheet_sync_history(history):
 

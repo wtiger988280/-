@@ -859,6 +859,10 @@ def init_state() -> None:
         st.session_state.get("completion_history", []),
     )
 
+    clear_completed_action_steps_for_noted_completion_history(
+        st.session_state.get("completion_history", []),
+    )
+
     if "replacement_assignees" not in st.session_state:
 
         raw_replacement_assignees = saved_state.get("replacement_assignees", {})
@@ -2165,6 +2169,8 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
 
     st.session_state.completion_history = updated_history
 
+    clear_completed_action_steps_for_noted_completion_history(updated_history)
+
     st.session_state.blade_reset_at = rebuild_blade_reset_at_from_completion_history(
         st.session_state.get("blade_reset_at", {}),
         updated_history,
@@ -2176,6 +2182,47 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
     save_completion_history(updated_history, force_clear=True)
 
     save_dashboard_state()
+
+
+def clear_completed_action_steps_for_noted_completion_history(history: list[dict[str, Any]]) -> bool:
+
+    noted_targets = {
+        (
+            normalize_machine_name(entry.get("설비", "")),
+            str(entry.get("날물명", "")).strip(),
+        )
+        for entry in normalize_completion_history(history)
+        if str(entry.get("비고", "")).strip()
+    }
+
+    if not noted_targets:
+
+        return False
+
+    changed = False
+    next_rows: list[dict[str, Any]] = []
+
+    for item in st.session_state.get("equipment_data", []):
+
+        item_key = (
+            normalize_machine_name(item.get("machine", "")),
+            get_display_blade_name(item),
+        )
+
+        if item_key in noted_targets and item.get("actionStep") == "completed":
+
+            next_rows.append({**item, "actionStep": ""})
+            changed = True
+
+        else:
+
+            next_rows.append(item)
+
+    if changed:
+
+        st.session_state.equipment_data = next_rows
+
+    return changed
 
 
 

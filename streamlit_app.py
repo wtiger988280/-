@@ -1487,18 +1487,29 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
             continue
 
+        normalized_machine = normalize_machine_name(machine)
+        normalized_blade = normalize_boring_blade_name(blade_name)
+
         if (
-            normalize_machine_name(machine) == "런닝 #22"
-            and normalize_boring_blade_name(blade_name) == "Φ5(관통) 날물"
-            and parse_numeric_value(usage_label) == 103207
+            completed_at == "2026-05-20 11:22:45"
+            and normalized_machine == "런닝 #21"
+            and normalized_blade == "Φ20 날물"
         ):
 
-            continue
+            completed_at = "2026-05-19 13:32:45"
 
         if (
-            completed_at.startswith("2026-05-19")
-            and normalize_machine_name(machine) == "런닝 #22"
-            and normalize_boring_blade_name(blade_name) == "Φ5(관통) 날물"
+            completed_at == "2026-05-20 11:22:31"
+            and normalized_machine == "런닝 #22"
+            and normalized_blade == "Φ5(관통) 날물"
+        ):
+
+            completed_at = "2026-05-19 13:32:59"
+
+        if (
+            normalized_machine == "런닝 #22"
+            and normalized_blade == "Φ5(관통) 날물"
+            and parse_numeric_value(usage_label) == 103207
         ):
 
             continue
@@ -1513,7 +1524,7 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
                 "교체완료시각": completed_at,
 
-                "설비": normalize_machine_name(machine),
+                "설비": normalized_machine,
 
                 "날물명": blade_name,
 

@@ -1487,6 +1487,14 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
             continue
 
+        if (
+            normalize_machine_name(machine) == "런닝 #22"
+            and normalize_boring_blade_name(blade_name) == "Φ5(관통) 날물"
+            and parse_numeric_value(usage_label) == 103207
+        ):
+
+            continue
+
         if not standard_label:
 
             standard_label = get_completion_standard_label(machine, blade_name)

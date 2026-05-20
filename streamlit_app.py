@@ -801,14 +801,6 @@ def init_state() -> None:
 
         st.session_state.sheet_sync_history = normalize_sheet_sync_history(raw_history if isinstance(raw_history, list) else [])
 
-    else:
-
-        persisted_history = load_sheet_sync_history()
-
-        if persisted_history:
-
-            st.session_state.sheet_sync_history = normalize_sheet_sync_history(persisted_history)
-
     if "completion_history" not in st.session_state:
 
         raw_completion = merge_completion_history(
@@ -817,20 +809,6 @@ def init_state() -> None:
         )
 
         st.session_state.completion_history = normalize_completion_history(raw_completion if isinstance(raw_completion, list) else [])
-
-    else:
-
-        persisted_completion = load_completion_history()
-
-        if persisted_completion:
-
-            st.session_state.completion_history = merge_completion_history(
-
-                st.session_state.get("completion_history", []),
-
-                persisted_completion,
-
-            )
 
     if "completion_history_deleted_keys" not in st.session_state:
 
@@ -6112,25 +6090,44 @@ def main() -> None:
 
         save_dashboard_state()
 
-    st.session_state.equipment_data = reconcile_edge_usage_from_history(
-
-        st.session_state.equipment_data,
-
-        effective_history,
-
-        st.session_state.get("usage_reset_at", ""),
-
+    reconcile_signature_payload = json.dumps(
+        {
+            "history_len": len(effective_history),
+            "history_first": effective_history[0] if effective_history else {},
+            "history_last": effective_history[-1] if effective_history else {},
+            "usage_reset_at": st.session_state.get("usage_reset_at", ""),
+            "machine_reset_at": st.session_state.get("machine_reset_at", {}),
+            "blade_reset_at": st.session_state.get("blade_reset_at", {}),
+            "completion_history": normalize_completion_history(st.session_state.get("completion_history", [])),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
     )
+    reconcile_signature = hashlib.sha1(reconcile_signature_payload.encode("utf-8")).hexdigest()
 
-    st.session_state.equipment_data = reconcile_boring_usage_from_history(
+    if st.session_state.get("last_reconcile_signature") != reconcile_signature:
 
-        st.session_state.equipment_data,
+        st.session_state.equipment_data = reconcile_edge_usage_from_history(
 
-        effective_history,
+            st.session_state.equipment_data,
 
-        st.session_state.get("usage_reset_at", ""),
+            effective_history,
 
-    )
+            st.session_state.get("usage_reset_at", ""),
+
+        )
+
+        st.session_state.equipment_data = reconcile_boring_usage_from_history(
+
+            st.session_state.equipment_data,
+
+            effective_history,
+
+            st.session_state.get("usage_reset_at", ""),
+
+        )
+
+        st.session_state.last_reconcile_signature = reconcile_signature
 
     enriched = enrich_data(st.session_state.equipment_data)
 

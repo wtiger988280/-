@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 
 
@@ -6348,104 +6348,6 @@ def main() -> None:
 
         st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
 
-        st.caption("데이터 반영 이력")
-
-        if st.session_state.sheet_sync_history:
-
-            history_df = pd.DataFrame(st.session_state.sheet_sync_history)
-
-            ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
-
-            history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
-
-            history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
-
-            history_df["설비"] = history_df["설비"].map(normalize_machine_name)
-
-            history_df["_line"] = history_df["설비"].map(infer_line_from_machine)
-
-            history_df = history_df[
-
-                history_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
-
-            ]
-
-            if active_line_filter != "all" and active_machine_filter != "전체":
-
-                history_df = history_df[history_df["설비"] == active_machine_filter]
-
-            history_filter_cols = st.columns(3)
-
-            history_df = apply_date_dropdown_filter(history_df, "반영시각", "history", history_filter_cols[0])
-
-            history_df = expand_history_rows_by_blade(history_df)
-
-            machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
-
-            selected_history_machine = history_filter_cols[1].selectbox("설비", machine_options, key="history_machine_filter")
-
-            if selected_history_machine != "전체":
-
-                history_df = history_df[history_df["설비"] == selected_history_machine]
-
-            blade_options = ["전체", *sorted([value for value in history_df["날물명"].dropna().astype(str).unique() if value.strip()])]
-
-            selected_history_blade = history_filter_cols[2].selectbox("날물명", blade_options, key="history_blade_filter")
-
-            if selected_history_blade != "전체":
-
-                history_df = history_df[history_df["날물명"] == selected_history_blade]
-
-            history_df = aggregate_history_rows(history_df)
-
-            history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
-
-            history_df["_machine_sort"] = history_df["설비"].apply(get_machine_sort_key)
-
-            history_df["_blade_sort"] = history_df["날물명"].apply(get_blade_sort_key)
-
-            history_df = (
-
-                history_df
-
-                .sort_values(
-
-                    by=["_sort_time", "_machine_sort", "_blade_sort", "설비", "날물명"],
-
-                    ascending=[False, True, True, True, True],
-
-                    na_position="last",
-
-                )
-
-                .reset_index(drop=True)
-
-            )
-
-            for column in ["반영 사용량(m)", "반영 사용량(회)"]:
-
-                if column in history_df.columns:
-
-                    history_df[column] = history_df[column].where(history_df[column].notna(), "")
-
-            history_df = history_df.drop(columns=["_line", "_sort_time", "_machine_sort", "_blade_sort"], errors="ignore")
-
-            if not history_df.empty:
-
-                st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True, hide_index=True)
-
-            else:
-
-                st.info("조건에 맞는 반영 이력이 없습니다.")
-
-        else:
-
-            st.info("아직 반영 이력이 없습니다.")
-
-
-
-        st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
-
         st.caption("교체완료 시점")
 
         with st.expander("교체완료 시점 직접 입력", expanded=False):
@@ -6651,6 +6553,104 @@ def main() -> None:
         else:
 
             st.info("아직 교체완료 이력이 없습니다.")
+
+
+        st.markdown("<div style='height:32px;'></div>", unsafe_allow_html=True)
+
+        st.caption("데이터 반영 이력")
+
+        if st.session_state.sheet_sync_history:
+
+            history_df = pd.DataFrame(st.session_state.sheet_sync_history)
+
+            ordered_columns = ["반영시각", "설비", "날물명", "반영 사용량(m)", "반영 사용량(회)", "데이터 기준일자"]
+
+            history_df = history_df.rename(columns={"시작일": "데이터 기준일자"})
+
+            history_df = history_df[[column for column in ordered_columns if column in history_df.columns]]
+
+            history_df["설비"] = history_df["설비"].map(normalize_machine_name)
+
+            history_df["_line"] = history_df["설비"].map(infer_line_from_machine)
+
+            history_df = history_df[
+
+                history_df["설비"].apply(lambda machine: (active_line_filter == "all" or infer_line_from_machine(machine) == active_line_filter))
+
+            ]
+
+            if active_line_filter != "all" and active_machine_filter != "전체":
+
+                history_df = history_df[history_df["설비"] == active_machine_filter]
+
+            history_filter_cols = st.columns(3)
+
+            history_df = apply_date_dropdown_filter(history_df, "반영시각", "history", history_filter_cols[0])
+
+            history_df = expand_history_rows_by_blade(history_df)
+
+            machine_options = ["전체", *sorted([value for value in history_df["설비"].dropna().astype(str).unique() if value.strip()])]
+
+            selected_history_machine = history_filter_cols[1].selectbox("설비", machine_options, key="history_machine_filter")
+
+            if selected_history_machine != "전체":
+
+                history_df = history_df[history_df["설비"] == selected_history_machine]
+
+            blade_options = ["전체", *sorted([value for value in history_df["날물명"].dropna().astype(str).unique() if value.strip()])]
+
+            selected_history_blade = history_filter_cols[2].selectbox("날물명", blade_options, key="history_blade_filter")
+
+            if selected_history_blade != "전체":
+
+                history_df = history_df[history_df["날물명"] == selected_history_blade]
+
+            history_df = aggregate_history_rows(history_df)
+
+            history_df["_sort_time"] = pd.to_datetime(history_df["반영시각"], errors="coerce")
+
+            history_df["_machine_sort"] = history_df["설비"].apply(get_machine_sort_key)
+
+            history_df["_blade_sort"] = history_df["날물명"].apply(get_blade_sort_key)
+
+            history_df = (
+
+                history_df
+
+                .sort_values(
+
+                    by=["_sort_time", "_machine_sort", "_blade_sort", "설비", "날물명"],
+
+                    ascending=[False, True, True, True, True],
+
+                    na_position="last",
+
+                )
+
+                .reset_index(drop=True)
+
+            )
+
+            for column in ["반영 사용량(m)", "반영 사용량(회)"]:
+
+                if column in history_df.columns:
+
+                    history_df[column] = history_df[column].where(history_df[column].notna(), "")
+
+            history_df = history_df.drop(columns=["_line", "_sort_time", "_machine_sort", "_blade_sort"], errors="ignore")
+
+            if not history_df.empty:
+
+                st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True, hide_index=True)
+
+            else:
+
+                st.info("조건에 맞는 반영 이력이 없습니다.")
+
+        else:
+
+            st.info("아직 반영 이력이 없습니다.")
+
 
 
 

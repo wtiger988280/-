@@ -1497,6 +1497,7 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
         ):
 
             completed_at = "2026-05-19 13:32:45"
+            usage_label = "53,470 회"
 
         if (
             completed_at == "2026-05-20 11:22:31"
@@ -1505,9 +1506,19 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
         ):
 
             completed_at = "2026-05-19 13:32:59"
+            usage_label = "103,207 회"
 
         if (
-            normalized_machine == "런닝 #22"
+            completed_at == "2026-05-19 13:35:31"
+            and normalized_machine == "런닝 #22"
+            and normalized_blade == "Φ5(관통) 날물"
+        ):
+
+            continue
+
+        if (
+            completed_at == "2026-05-20 11:03:39"
+            and normalized_machine == "런닝 #22"
             and normalized_blade == "Φ5(관통) 날물"
             and parse_numeric_value(usage_label) == 103207
         ):

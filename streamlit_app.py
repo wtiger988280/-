@@ -42,7 +42,7 @@ APP_DATA_VERSION = "2026-04-28-boring-history-refresh"
 
 
 
-TEAMS_DEFAULT_WEBHOOK = "https://defaulte2d70a05f3524e9d8c182194f1d9ef.31.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/98f10010be974d57a6f4065239b83ca4/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=tVbGSnsTMHbildXcbLsoBQj_WXrvSSOLnqktQNSDFBM"
+TEAMS_DEFAULT_WEBHOOK = ""
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KmsdyvfHJEOXnZvGtUl1TEhWz0JzJ3NWkg3Amb8l91U/edit"
 
@@ -3748,89 +3748,7 @@ def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
 
 def send_teams_complete_alert(row: dict[str, Any]) -> None:
 
-    webhook_url = st.session_state.teams_webhook_url.strip()
-
-    if not webhook_url:
-
-        raise ValueError("Teams Webhook URL이 설정되지 않았습니다.")
-
-    assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
-
-    facts = [
-
-        {"title": "설비", "value": row["machine"]},
-
-        {"title": "날물", "value": row["bladeName"]},
-
-        {"title": "교체 시점 사용량", "value": format_cycle_value(row, parse_numeric_value(row.get("usage", 0)))},
-
-        {"title": "조치", "value": "교체완료"},
-
-        {"title": "처리일", "value": date.today().isoformat()},
-
-    ]
-
-    if assignee:
-
-        facts.append({"title": "담당자", "value": assignee})
-
-    note = str(row.get("note", row.get("비고", ""))).strip()
-
-    if note:
-
-        facts.append({"title": "비고", "value": note})
-
-
-
-    payload = {
-
-        "type": "message",
-
-        "attachments": [
-
-            {
-
-                "contentType": "application/vnd.microsoft.card.adaptive",
-
-                "content": {
-
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-
-                    "type": "AdaptiveCard",
-
-                    "version": "1.4",
-
-                    "body": [
-
-                        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": "날물 교체 완료"},
-
-                        {"type": "TextBlock", "wrap": True, "text": f"{row['line']} / {row['machine']} / {row['spindle']}"},
-
-                        {
-
-                            "type": "FactSet",
-
-                            "facts": facts,
-
-                        },
-
-                    ],
-
-                },
-
-            }
-
-        ],
-
-    }
-
-
-
-    response = requests.post(webhook_url, json=payload, timeout=30)
-
-    if not response.ok:
-
-        raise RuntimeError(f"Teams 알림 실패: HTTP {response.status_code}")
+    return None
 
 
 
@@ -3838,83 +3756,7 @@ def send_teams_complete_alert(row: dict[str, Any]) -> None:
 
 def send_teams_replace_alert(row: dict[str, Any]) -> None:
 
-    webhook_url = st.session_state.teams_webhook_url.strip()
-
-    if not webhook_url:
-
-        raise ValueError("Teams Webhook URL이 설정되지 않았습니다.")
-
-    assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
-
-    facts = [
-
-        {"title": "설비", "value": row["machine"]},
-
-        {"title": "날물", "value": row["displayBladeName"]},
-
-        {"title": "사용률", "value": f"{round(row['rate'] * 100)}%"},
-
-        {"title": "잔여사용량", "value": row["displayRemaining"]},
-
-        {"title": "예측교체", "value": row["predictedDate"]},
-
-    ]
-
-    if assignee:
-
-        facts.append({"title": "담당자", "value": assignee})
-
-
-
-    payload = {
-
-        "type": "message",
-
-        "attachments": [
-
-            {
-
-                "contentType": "application/vnd.microsoft.card.adaptive",
-
-                "content": {
-
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-
-                    "type": "AdaptiveCard",
-
-                    "version": "1.4",
-
-                    "body": [
-
-                        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": "날물 교체 알림"},
-
-                        {"type": "TextBlock", "wrap": True, "text": f"{row['line']} / {row['machine']} / {row['spindle']}"},
-
-                        {
-
-                            "type": "FactSet",
-
-                            "facts": facts,
-
-                        },
-
-                    ],
-
-                },
-
-            }
-
-        ],
-
-    }
-
-
-
-    response = requests.post(webhook_url, json=payload, timeout=30)
-
-    if not response.ok:
-
-        raise RuntimeError(f"Teams 알림 실패: HTTP {response.status_code}")
+    return None
 
 
 
@@ -3944,53 +3786,7 @@ def get_replace_alert_signature(row: dict[str, Any]) -> str:
 
 def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
 
-    alert_history = st.session_state.get("replace_alert_history", {})
-
-    active_alert_keys = {
-        f"{str(row.get('machine', '')).strip()}|{get_display_blade_name(row)}"
-        for row in enriched
-        if row.get("status") == "replace"
-    }
-
-    next_history = {key: signature for key, signature in alert_history.items() if key in active_alert_keys}
-
-    latest_message = ""
-
-    for row in enriched:
-
-        machine = str(row.get("machine", "")).strip()
-
-        if not machine or row.get("status") != "replace":
-
-            continue
-
-        alert_key = f"{machine}|{get_display_blade_name(row)}"
-
-        if next_history.get(alert_key) == "sent":
-
-            continue
-
-        try:
-
-            send_teams_replace_alert(row)
-
-            next_history[alert_key] = "sent"
-
-            latest_message = f"{machine} · {get_display_blade_name(row)} 날물 교체 알림을 전송했습니다."
-
-        except Exception as exc:
-
-            latest_message = f"{machine} · {get_display_blade_name(row)} 날물 교체 알림 전송 실패: {exc}"
-
-    if next_history != alert_history or latest_message:
-
-        st.session_state.replace_alert_history = next_history
-
-        if latest_message:
-
-            st.session_state.send_result = latest_message
-
-        save_dashboard_state()
+    return None
 
 
 
@@ -5539,46 +5335,6 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
         message = f"{selected_machine} · {selected_blade} 조기 교체 처리되었습니다."
 
-    try:
-
-        remaining = max(0, selected_standard - completed_usage)
-
-        remain_days = days_left(remaining, parse_numeric_value(selected_item.get("avg7d", 0)))
-
-        alert_row = {
-
-            **selected_item,
-
-            "rate": selected_rate,
-
-            "bladeName": selected_blade,
-
-            "displayBladeName": selected_blade,
-
-            "displayRemaining": format_cycle_value(selected_item, remaining),
-
-            "predictedDate": "-" if remain_days == 999 else f"{remain_days}일 후",
-
-            "assignee": assignee,
-
-            "담당자": assignee,
-
-            "note": note,
-
-            "비고": note,
-
-        }
-
-        send_teams_complete_alert(alert_row)
-
-        message += " Teams 알림도 전송했습니다."
-
-    except Exception as exc:
-
-        message += f" Teams 알림 전송 실패: {exc}"
-
-
-
     st.session_state.send_result = message
 
     save_completion_history(st.session_state.get("completion_history", []), force_clear=True)
@@ -6263,8 +6019,6 @@ def main() -> None:
         if auto_sheet_updated_at:
 
             st.caption(f"자동 연결 갱신: {auto_sheet_updated_at}")
-
-        st.text_input("Teams Webhook URL", key="teams_webhook_url")
 
         if st.button("사용률 리셋", use_container_width=True):
 

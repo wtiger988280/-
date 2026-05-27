@@ -3119,11 +3119,11 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         if blade_reset_key == "런닝 #22|Φ5(관통) 날물":
 
-            total_usage = 13788
+            total_usage = 15920
 
         if blade_reset_key == "런닝 #21|Φ20 날물":
 
-            total_usage = 4050
+            total_usage = 4908
 
         if blade_reset_key == "런닝 #20|Φ12(관통) 날물":
 

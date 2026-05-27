@@ -3125,6 +3125,14 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             total_usage = 4050
 
+        if blade_reset_key == "런닝 #20|Φ12(관통) 날물":
+
+            total_usage = 11620
+
+        if blade_reset_key == "런닝 #20|Φ5(관통) 날물":
+
+            total_usage = 112525
+
         has_blade_reset = bool(str(blade_reset_at.get(blade_reset_key, "")).strip())
 
         action_step = "" if total_usage > 0 or blade_reset_key in noted_completion_targets else ("completed" if has_blade_reset else item.get("actionStep", ""))

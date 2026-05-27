@@ -112,6 +112,24 @@ COMPLETION_HISTORY_FALLBACK_ROWS = [
         "담당자": "마니",
         "비고": "잔이바리로 인한 날물 교체",
     },
+    {
+        "교체완료시각": "2026-05-19 13:32:59",
+        "설비": "런닝 #22",
+        "날물명": "Φ5(관통) 날물",
+        "기준값": "100,000 회",
+        "교체 시점 사용량": "103,207 회",
+        "담당자": "정영훈",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
+    },
+    {
+        "교체완료시각": "2026-05-19 13:32:45",
+        "설비": "런닝 #21",
+        "날물명": "Φ20 날물",
+        "기준값": "50,000 회",
+        "교체 시점 사용량": "53,470 회",
+        "담당자": "정영훈",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
+    },
 ]
 
 BORING_WORKSHEET_GID_BY_SYNC_TIME = {
@@ -1489,6 +1507,14 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
 
         normalized_machine = normalize_machine_name(machine)
         normalized_blade = normalize_boring_blade_name(blade_name)
+
+        if (
+            completed_at in {"2026-05-27 02:31:34", "2026-05-27 02:30:22"}
+            and normalized_machine == "런닝 #20"
+            and normalized_blade in {"Φ5(관통) 날물", "Φ12(관통) 날물"}
+        ):
+
+            continue
 
         if (
             completed_at == "2026-05-20 11:22:45"

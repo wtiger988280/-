@@ -42,7 +42,7 @@ APP_DATA_VERSION = "2026-04-28-boring-history-refresh"
 
 
 
-TEAMS_DEFAULT_WEBHOOK = ""
+SLACK_DEFAULT_WEBHOOK = ""
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KmsdyvfHJEOXnZvGtUl1TEhWz0JzJ3NWkg3Amb8l91U/edit"
 
@@ -875,9 +875,9 @@ def init_state() -> None:
 
         st.session_state.sheet_sync_hashes = saved_state.get("sheet_sync_hashes", {})
 
-    if "teams_webhook_url" not in st.session_state:
+    if "slack_webhook_url" not in st.session_state:
 
-        st.session_state.teams_webhook_url = saved_state.get("teams_webhook_url", TEAMS_DEFAULT_WEBHOOK)
+        st.session_state.slack_webhook_url = saved_state.get("slack_webhook_url", SLACK_DEFAULT_WEBHOOK)
 
     if "auto_sheet_url" not in st.session_state:
 
@@ -2041,6 +2041,7 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         "boring_snapshot_loaded_key",
         "line_filter_toggle",
         "line_machine_filter",
+        "slack_webhook_url",
     ]
 
     try:
@@ -2858,6 +2859,8 @@ def save_dashboard_state() -> None:
 
         "replace_alert_history": st.session_state.get("replace_alert_history", {}),
 
+        "slack_webhook_url": st.session_state.get("slack_webhook_url", SLACK_DEFAULT_WEBHOOK),
+
         "last_sheet_sync_at": st.session_state.get("last_sheet_sync_at", ""),
 
         "last_sheet_sync_details": normalize_last_sheet_sync_details(st.session_state.get("last_sheet_sync_details", [])),
@@ -2873,8 +2876,6 @@ def save_dashboard_state() -> None:
         "assignee_widget_reset_versions": st.session_state.get("assignee_widget_reset_versions", {}),
 
         "sheet_sync_hashes": st.session_state.get("sheet_sync_hashes", {}),
-
-        "teams_webhook_url": st.session_state.get("teams_webhook_url", TEAMS_DEFAULT_WEBHOOK),
 
         "auto_sheet_url": st.session_state.get("auto_sheet_url", DEFAULT_GOOGLE_SHEET_URL),
 
@@ -3780,19 +3781,47 @@ def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
 
 
 
-def send_teams_complete_alert(row: dict[str, Any]) -> None:
+def send_slack_replace_alert(row: dict[str, Any]) -> None:
 
-    return None
+    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
 
+    if not webhook_url:
 
+        return
 
+    assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
 
+    fields = [
+        f"*설비:* {row.get('machine', '')}",
+        f"*날물:* {row.get('displayBladeName', get_display_blade_name(row))}",
+        f"*사용률:* {round(parse_numeric_value(row.get('rate', 0)) * 100)}%",
+        f"*잔여사용량:* {row.get('displayRemaining', '')}",
+        f"*예측교체:* {row.get('predictedDate', '')}",
+    ]
 
-def send_teams_replace_alert(row: dict[str, Any]) -> None:
+    if assignee:
 
-    return None
+        fields.append(f"*담당자:* {assignee}")
 
+    payload = {
+        "text": f"날물 교체필요 알림 - {row.get('machine', '')} / {row.get('displayBladeName', get_display_blade_name(row))}",
+        "blocks": [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": "날물 교체필요 알림"},
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "\n".join(fields)},
+            },
+        ],
+    }
 
+    response = requests.post(webhook_url, json=payload, timeout=30)
+
+    if not response.ok:
+
+        raise RuntimeError(f"Slack 알림 실패: HTTP {response.status_code}")
 
 
 
@@ -3820,7 +3849,67 @@ def get_replace_alert_signature(row: dict[str, Any]) -> str:
 
 def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
 
-    return None
+    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
+
+    if not webhook_url:
+
+        return
+
+    webhook_signature = hashlib.sha1(webhook_url.encode("utf-8")).hexdigest()
+
+    alert_history = st.session_state.get("replace_alert_history", {})
+
+    active_alert_keys = {
+        f"{str(row.get('machine', '')).strip()}|{get_display_blade_name(row)}"
+        for row in enriched
+        if row.get("status") == "replace"
+    }
+
+    next_history = {key: signature for key, signature in alert_history.items() if key in active_alert_keys}
+
+    latest_message = ""
+
+    for row in enriched:
+
+        machine = str(row.get("machine", "")).strip()
+
+        if not machine or row.get("status") != "replace":
+
+            continue
+
+        alert_key = f"{machine}|{get_display_blade_name(row)}"
+
+        signature = get_replace_alert_signature(row)
+
+        failed_signature = f"failed|{signature}|{webhook_signature}"
+
+        if next_history.get(alert_key) in {signature, failed_signature}:
+
+            continue
+
+        try:
+
+            send_slack_replace_alert(row)
+
+            next_history[alert_key] = signature
+
+            latest_message = f"{machine} · {get_display_blade_name(row)} Slack 교체필요 알림을 전송했습니다."
+
+        except Exception as exc:
+
+            next_history[alert_key] = failed_signature
+
+            latest_message = f"{machine} · {get_display_blade_name(row)} Slack 알림 전송 실패: {exc}"
+
+    if next_history != alert_history or latest_message:
+
+        st.session_state.replace_alert_history = next_history
+
+        if latest_message:
+
+            st.session_state.send_result = latest_message
+
+        save_dashboard_state()
 
 
 
@@ -6053,6 +6142,8 @@ def main() -> None:
         if auto_sheet_updated_at:
 
             st.caption(f"자동 연결 갱신: {auto_sheet_updated_at}")
+
+        st.text_input("Slack Webhook URL", key="slack_webhook_url", type="password")
 
         if st.button("사용률 리셋", use_container_width=True):
 

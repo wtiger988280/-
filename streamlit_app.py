@@ -2058,6 +2058,11 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         existing_state = load_remote_dashboard_state()
 
         existing_completion = existing_state.get("completion_history", [])
+        data["completion_history"] = merge_completion_history(
+            existing_completion if isinstance(existing_completion, list) else [],
+            data.get("completion_history", []),
+            load_completion_history(),
+        )
 
         if (
             not normalize_completion_history(data.get("completion_history", []))
@@ -2845,6 +2850,7 @@ def save_dashboard_state() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     completion_history = merge_completion_history(
+        load_completion_history(),
         st.session_state.get("completion_history", []),
         COMPLETION_HISTORY_FALLBACK_ROWS,
     )

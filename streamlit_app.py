@@ -1534,7 +1534,7 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
             continue
 
         if (
-            completed_at in {"2026-05-29 15:20:08", "2026-05-29 14:33:00"}
+            completed_at in {"2026-05-29 15:20:08", "2026-05-29 15:22:58", "2026-05-29 14:33:00"}
             and normalized_machine == "런닝 #20"
             and normalized_blade in {"Φ5(관통) 날물", "Φ12(관통) 날물"}
         ):
@@ -3235,19 +3235,21 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
 
-        if blade_reset_key == "런닝 #22|Φ5(관통) 날물":
+        apply_usage_override = not has_blade_reset
+
+        if apply_usage_override and blade_reset_key == "런닝 #22|Φ5(관통) 날물":
 
             total_usage = 15920
 
-        if blade_reset_key == "런닝 #21|Φ20 날물":
+        if apply_usage_override and blade_reset_key == "런닝 #21|Φ20 날물":
 
             total_usage = 4908
 
-        if blade_reset_key == "런닝 #20|Φ12(관통) 날물":
+        if apply_usage_override and blade_reset_key == "런닝 #20|Φ12(관통) 날물":
 
             total_usage = 11620
 
-        if blade_reset_key == "런닝 #20|Φ5(관통) 날물":
+        if apply_usage_override and blade_reset_key == "런닝 #20|Φ5(관통) 날물":
 
             total_usage = 112525
 

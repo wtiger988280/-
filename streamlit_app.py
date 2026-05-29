@@ -2207,6 +2207,29 @@ def get_noted_completion_targets(history: list[dict[str, Any]] | None = None) ->
     }
 
 
+def get_latest_noted_completion_at_by_target(history: list[dict[str, Any]] | None = None) -> dict[str, str]:
+
+    source_history = history if history is not None else st.session_state.get("completion_history", [])
+
+    latest_by_target: dict[str, str] = {}
+
+    for entry in normalize_completion_history(source_history):
+
+        if not str(entry.get("비고", "")).strip():
+
+            continue
+
+        target = f"{normalize_machine_name(entry.get('설비', ''))}|{str(entry.get('날물명', '')).strip()}"
+
+        completed_at = str(entry.get("교체완료시각", "")).strip()
+
+        if completed_at and completed_at > latest_by_target.get(target, ""):
+
+            latest_by_target[target] = completed_at
+
+    return latest_by_target
+
+
 
 def save_completion_history(
     history: list[dict[str, Any]],
@@ -3002,6 +3025,8 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
     blade_reset_at = st.session_state.get("blade_reset_at", {})
 
     noted_completion_targets = get_noted_completion_targets()
+    latest_noted_completion_at = get_latest_noted_completion_at_by_target()
+    latest_noted_completion_at = get_latest_noted_completion_at_by_target()
 
     for entry in normalize_sheet_sync_history(history):
 
@@ -3077,7 +3102,10 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
                         "standard": EDGE_FIXED_STANDARDS.get(item["machine"], item["standard"]),
 
-                        "actionStep": "" if blade_reset_key in noted_completion_targets else "completed",
+                        "actionStep": "" if (
+                            blade_reset_key in noted_completion_targets
+                            and str(blade_reset_at.get(blade_reset_key, "")).strip() <= latest_noted_completion_at.get(blade_reset_key, "")
+                        ) else "completed",
 
                     }
 
@@ -3127,6 +3155,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
     blade_reset_at = st.session_state.get("blade_reset_at", {})
 
     noted_completion_targets = get_noted_completion_targets()
+    latest_noted_completion_at = get_latest_noted_completion_at_by_target()
 
     for entry in normalize_sheet_sync_history(history):
 
@@ -3176,10 +3205,6 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             aggregated[key]["start_date"] = min(current_start, start_date) if current_start else start_date
 
-    if not aggregated:
-
-        return data
-
     next_rows: list[dict[str, Any]] = []
 
     for item in data:
@@ -3196,9 +3221,19 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
         key = (machine, blade_name)
 
-        total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
-
         blade_reset_key = f"{machine}|{blade_name}"
+
+        blade_reset_time = str(blade_reset_at.get(blade_reset_key, "")).strip()
+
+        has_blade_reset = bool(blade_reset_time)
+
+        if key not in aggregated and not has_blade_reset:
+
+            next_rows.append(item)
+
+            continue
+
+        total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
 
         if blade_reset_key == "런닝 #22|Φ5(관통) 날물":
 
@@ -3216,9 +3251,18 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
 
             total_usage = 112525
 
-        has_blade_reset = bool(str(blade_reset_at.get(blade_reset_key, "")).strip())
+        noted_completion_is_latest = (
+            blade_reset_key in noted_completion_targets
+            and blade_reset_time <= latest_noted_completion_at.get(blade_reset_key, "")
+        )
 
-        action_step = "" if total_usage > 0 or blade_reset_key in noted_completion_targets else ("completed" if has_blade_reset else item.get("actionStep", ""))
+        if has_blade_reset and not noted_completion_is_latest:
+
+            action_step = "completed"
+
+        else:
+
+            action_step = "" if total_usage > 0 or noted_completion_is_latest else item.get("actionStep", "")
 
         next_rows.append(
 
@@ -5550,7 +5594,7 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
 def get_action_label(row: dict[str, Any]) -> str:
 
-    if row.get("actionStep") == "completed" and parse_numeric_value(row.get("usage", 0)) <= 0:
+    if row.get("actionStep") == "completed":
 
         return "교체완료"
 

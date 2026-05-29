@@ -1747,9 +1747,28 @@ def worksheet_store_values_to_completion_history(values: list[list[Any]]) -> lis
     return normalize_completion_history(rows)
 
 
-def append_completion_history_store(spreadsheet, history: list[dict[str, Any]]) -> None:
+def filter_completion_history_by_keys(history: list[dict[str, Any]], excluded_keys: set[str] | None = None) -> list[dict[str, Any]]:
 
     normalized = normalize_completion_history(history)
+
+    if not excluded_keys:
+
+        return normalized
+
+    return [
+        entry
+        for entry in normalized
+        if get_completion_history_key(entry) not in excluded_keys
+    ]
+
+
+def append_completion_history_store(
+    spreadsheet,
+    history: list[dict[str, Any]],
+    excluded_keys: set[str] | None = None,
+) -> None:
+
+    normalized = filter_completion_history_by_keys(history, excluded_keys)
 
     if not normalized:
 
@@ -1768,28 +1787,20 @@ def append_completion_history_store(spreadsheet, history: list[dict[str, Any]]) 
 
         store_worksheet.update([["payload"]], "A1", value_input_option="RAW")
 
-    existing_payloads = {
-        str(row[0]).strip()
-        for row in values[1:]
-        if row and str(row[0]).strip()
-    }
+    existing_rows = filter_completion_history_by_keys(
+        worksheet_store_values_to_completion_history(values),
+        excluded_keys,
+    )
 
-    rows_to_append = []
+    next_rows = merge_completion_history(existing_rows, normalized)
 
-    for entry in normalized:
+    payload_rows = [
+        [json.dumps(entry, ensure_ascii=False, sort_keys=True)]
+        for entry in next_rows
+    ]
 
-        payload = json.dumps(entry, ensure_ascii=False, sort_keys=True)
-
-        if payload in existing_payloads:
-
-            continue
-
-        existing_payloads.add(payload)
-        rows_to_append.append([payload])
-
-    if rows_to_append:
-
-        store_worksheet.append_rows(rows_to_append, value_input_option="RAW")
+    store_worksheet.clear()
+    store_worksheet.update([["payload"], *payload_rows], "A1", value_input_option="RAW")
 
 
 
@@ -1839,7 +1850,11 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
 
 
-def save_remote_completion_history(history: list[dict[str, Any]], force_clear: bool = False) -> None:
+def save_remote_completion_history(
+    history: list[dict[str, Any]],
+    force_clear: bool = False,
+    excluded_keys: set[str] | None = None,
+) -> None:
 
     spreadsheet = get_google_spreadsheet()
 
@@ -1849,13 +1864,13 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
     try:
 
-        normalized = normalize_completion_history(history)
+        normalized = filter_completion_history_by_keys(history, excluded_keys)
 
         if not normalized:
 
             return
 
-        append_completion_history_store(spreadsheet, normalized)
+        append_completion_history_store(spreadsheet, normalized, excluded_keys)
 
         columns = COMPLETION_HISTORY_COLUMNS
 
@@ -1868,7 +1883,10 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
         try:
 
-            existing_remote = worksheet_values_to_completion_history(worksheet.get_all_values())
+            existing_remote = filter_completion_history_by_keys(
+                worksheet_values_to_completion_history(worksheet.get_all_values()),
+                excluded_keys,
+            )
 
         except Exception:
 
@@ -1902,7 +1920,10 @@ def save_remote_completion_history(history: list[dict[str, Any]], force_clear: b
 
         try:
 
-            existing_archive = worksheet_values_to_completion_history(archive_worksheet.get_all_values())
+            existing_archive = filter_completion_history_by_keys(
+                worksheet_values_to_completion_history(archive_worksheet.get_all_values()),
+                excluded_keys,
+            )
 
         except Exception:
 
@@ -2064,12 +2085,16 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
     try:
 
         existing_state = load_remote_dashboard_state()
+        excluded_keys = set(st.session_state.get("completion_history_excluded_keys", []))
 
-        existing_completion = existing_state.get("completion_history", [])
+        existing_completion = filter_completion_history_by_keys(
+            existing_state.get("completion_history", []),
+            excluded_keys,
+        )
         data["completion_history"] = merge_completion_history(
-            existing_completion if isinstance(existing_completion, list) else [],
-            data.get("completion_history", []),
-            load_completion_history(),
+            existing_completion,
+            filter_completion_history_by_keys(data.get("completion_history", []), excluded_keys),
+            filter_completion_history_by_keys(load_completion_history(), excluded_keys),
         )
 
         if (
@@ -2175,11 +2200,15 @@ def get_noted_completion_targets(history: list[dict[str, Any]] | None = None) ->
 
 
 
-def save_completion_history(history: list[dict[str, Any]], force_clear: bool = False) -> None:
+def save_completion_history(
+    history: list[dict[str, Any]],
+    force_clear: bool = False,
+    excluded_keys: set[str] | None = None,
+) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    remote_history = load_remote_completion_history()
+    remote_history = filter_completion_history_by_keys(load_remote_completion_history(), excluded_keys)
 
     archive_history: list[dict[str, Any]] = []
 
@@ -2189,13 +2218,20 @@ def save_completion_history(history: list[dict[str, Any]], force_clear: bool = F
 
             archive_data = json.loads(COMPLETION_HISTORY_ARCHIVE_PATH.read_text(encoding="utf-8"))
 
-            archive_history = normalize_completion_history(archive_data if isinstance(archive_data, list) else [])
+            archive_history = filter_completion_history_by_keys(
+                archive_data if isinstance(archive_data, list) else [],
+                excluded_keys,
+            )
 
         except Exception:
 
             archive_history = []
 
-    normalized = merge_completion_history(archive_history, remote_history, normalize_completion_history(history))
+    normalized = merge_completion_history(
+        archive_history,
+        remote_history,
+        filter_completion_history_by_keys(history, excluded_keys),
+    )
 
     if not normalized:
 
@@ -2215,7 +2251,7 @@ def save_completion_history(history: list[dict[str, Any]], force_clear: bool = F
 
         COMPLETION_HISTORY_ARCHIVE_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    save_remote_completion_history(normalized, force_clear=force_clear)
+    save_remote_completion_history(normalized, force_clear=force_clear, excluded_keys=excluded_keys)
 
 
 def get_completion_history_key(entry: dict[str, Any]) -> str:
@@ -2238,6 +2274,8 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
         return
 
     updated_history: list[dict[str, Any]] = []
+    stale_keys: set[str] = set()
+
     for entry in normalize_completion_history(st.session_state.get("completion_history", [])):
 
         entry_key = get_completion_history_key(entry)
@@ -2257,9 +2295,17 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
                 "비고": str(updates.get("비고", entry.get("비고", ""))).strip(),
             }
 
+            next_key = get_completion_history_key(entry)
+
+            if next_key and next_key != entry_key:
+
+                stale_keys.add(entry_key)
+
         updated_history.append(entry)
 
-    updated_history = merge_completion_history(updated_history)
+    updated_history = merge_completion_history(
+        filter_completion_history_by_keys(updated_history, stale_keys)
+    )
 
     st.session_state.completion_history = updated_history
 
@@ -2273,9 +2319,13 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
     # Edited rows can change their identity columns, including completion time.
     # Replace persisted local/remote history so stale rows do not come back on refresh.
     save_completion_history_deleted_keys(set())
-    save_completion_history(updated_history, force_clear=True)
+    st.session_state.completion_history_excluded_keys = sorted(stale_keys)
+
+    save_completion_history(updated_history, force_clear=True, excluded_keys=stale_keys)
 
     save_dashboard_state()
+
+    st.session_state.completion_history_excluded_keys = []
 
 
 def clear_completed_action_steps_for_noted_completion_history(history: list[dict[str, Any]]) -> bool:
@@ -2856,11 +2906,12 @@ def load_dashboard_state() -> dict[str, Any]:
 def save_dashboard_state() -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    excluded_keys = set(st.session_state.get("completion_history_excluded_keys", []))
 
     completion_history = merge_completion_history(
-        load_completion_history(),
-        st.session_state.get("completion_history", []),
-        COMPLETION_HISTORY_FALLBACK_ROWS,
+        filter_completion_history_by_keys(load_completion_history(), excluded_keys),
+        filter_completion_history_by_keys(st.session_state.get("completion_history", []), excluded_keys),
+        filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, excluded_keys),
     )
 
     if not completion_history:
@@ -5491,13 +5542,13 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
 def get_action_label(row: dict[str, Any]) -> str:
 
-    if row.get("rate", 0) >= 1:
-
-        return "교체필요"
-
     if row.get("actionStep") == "completed" and parse_numeric_value(row.get("usage", 0)) <= 0:
 
         return "교체완료"
+
+    if row.get("rate", 0) >= 1:
+
+        return "교체필요"
 
     return "정상"
 
@@ -5929,6 +5980,8 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
                             reset_versions[assignee_record_key] = reset_versions.get(assignee_record_key, 0) + 1
 
                             st.session_state.assignee_widget_reset_versions = reset_versions
+
+                            st.rerun()
 
                     st.rerun()
 

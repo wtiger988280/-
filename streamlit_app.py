@@ -146,7 +146,7 @@ COMPLETION_HISTORY_FALLBACK_ROWS = [
         "기준값": "10,000 회",
         "교체 시점 사용량": "10,034 회",
         "담당자": "정영훈",
-        "비고": "누락된 교체완료 이력 복구",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
     },
     {
         "교체완료시각": "2026-05-29 15:20:08",
@@ -155,7 +155,7 @@ COMPLETION_HISTORY_FALLBACK_ROWS = [
         "기준값": "100,000 회",
         "교체 시점 사용량": "112,525 회",
         "담당자": "정영훈",
-        "비고": "누락된 교체완료 이력 복구",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
     },
     {
         "교체완료시각": "2026-05-29 14:33:00",
@@ -163,8 +163,8 @@ COMPLETION_HISTORY_FALLBACK_ROWS = [
         "날물명": "Φ12(관통) 날물",
         "기준값": "10,000 회",
         "교체 시점 사용량": "11,620 회",
-        "담당자": "정",
-        "비고": "누락된 교체완료 이력 복구",
+        "담당자": "정영훈",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
     },
 ]
 
@@ -1427,7 +1427,7 @@ def load_completion_history() -> list[dict[str, Any]]:
     # only a fallback so edited old rows cannot resurrect after a refresh.
     if local_history or remote_history:
 
-        return merge_completion_history(local_history, remote_history, COMPLETION_HISTORY_FALLBACK_ROWS)
+        return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, local_history, remote_history)
 
     archive_history: list[dict[str, Any]] = []
 
@@ -1443,7 +1443,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
             archive_history = []
 
-    return merge_completion_history(archive_history, COMPLETION_HISTORY_FALLBACK_ROWS)
+    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, archive_history)
 
 
 def load_completion_history_deleted_keys() -> set[str]:
@@ -1873,7 +1873,7 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
         archive_rows = []
 
-    return merge_completion_history(store_rows, remote_rows, archive_rows, COMPLETION_HISTORY_FALLBACK_ROWS)
+    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, store_rows, remote_rows, archive_rows)
 
 
 
@@ -2119,9 +2119,9 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
             excluded_keys,
         )
         data["completion_history"] = merge_completion_history(
+            filter_completion_history_by_keys(load_completion_history(), excluded_keys),
             existing_completion,
             filter_completion_history_by_keys(data.get("completion_history", []), excluded_keys),
-            filter_completion_history_by_keys(load_completion_history(), excluded_keys),
         )
 
         if (
@@ -2959,9 +2959,9 @@ def save_dashboard_state() -> None:
     excluded_keys = set(st.session_state.get("completion_history_excluded_keys", []))
 
     completion_history = merge_completion_history(
+        filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, excluded_keys),
         filter_completion_history_by_keys(load_completion_history(), excluded_keys),
         filter_completion_history_by_keys(st.session_state.get("completion_history", []), excluded_keys),
-        filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, excluded_keys),
     )
 
     if not completion_history:

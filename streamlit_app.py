@@ -3258,7 +3258,7 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
             and blade_reset_time <= latest_noted_completion_at.get(blade_reset_key, "")
         )
 
-        if has_blade_reset and not noted_completion_is_latest:
+        if has_blade_reset and not noted_completion_is_latest and total_usage <= 0:
 
             action_step = "completed"
 
@@ -5596,7 +5596,7 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
 def get_action_label(row: dict[str, Any]) -> str:
 
-    if row.get("actionStep") == "completed":
+    if row.get("actionStep") == "completed" and parse_numeric_value(row.get("usage", 0)) <= 0:
 
         return "교체완료"
 

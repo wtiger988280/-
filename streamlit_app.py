@@ -6565,20 +6565,33 @@ def main() -> None:
 
                     column_config={"_history_key": None},
 
+                    num_rows="dynamic",
+
                     key="completion_note_editor",
 
                 )
 
+                def clean_editor_value(value: Any) -> str:
+
+                    if pd.isna(value):
+
+                        return ""
+
+                    return str(value).strip()
+
+                editable_columns = ["교체완료시각", "설비", "날물명", "기준값", "교체 시점 사용량", "담당자", "비고"]
+
+                def editor_row_to_completion_entry(row: dict[str, Any]) -> dict[str, str]:
+
+                    return {
+                        column: clean_editor_value(row.get(column, ""))
+                        for column in editable_columns
+                    }
+
                 original_values = {
 
                     str(row.get("_history_key", "")).strip(): {
-                        "교체완료시각": str(row.get("교체완료시각", "")).strip(),
-                        "설비": str(row.get("설비", "")).strip(),
-                        "날물명": str(row.get("날물명", "")).strip(),
-                        "기준값": str(row.get("기준값", "")).strip(),
-                        "교체 시점 사용량": str(row.get("교체 시점 사용량", "")).strip(),
-                        "담당자": str(row.get("담당자", "")).strip(),
-                        "비고": str(row.get("비고", "")).strip(),
+                        **editor_row_to_completion_entry(row),
                     }
 
                     for row in editable_completion_df.to_dict(orient="records")
@@ -6587,54 +6600,53 @@ def main() -> None:
 
                 }
 
+                edited_rows = edited_completion_df.to_dict(orient="records")
+
                 note_updates = {
 
-                    str(row.get("_history_key", "")).strip(): {
+                    clean_editor_value(row.get("_history_key", "")): editor_row_to_completion_entry(row)
 
-                        "교체완료시각": str(row.get("교체완료시각", "")).strip(),
+                    for row in edited_rows
 
-                        "설비": str(row.get("설비", "")).strip(),
-
-                        "날물명": str(row.get("날물명", "")).strip(),
-                        "기준값": str(row.get("기준값", "")).strip(),
-
-                        "교체 시점 사용량": str(row.get("교체 시점 사용량", "")).strip(),
-
-                        "담당자": str(row.get("담당자", "")).strip(),
-
-                        "비고": str(row.get("비고", "")).strip(),
-
-                    }
-
-                    for row in edited_completion_df.to_dict(orient="records")
-
-                    if str(row.get("_history_key", "")).strip()
+                    if clean_editor_value(row.get("_history_key", ""))
 
                     and (
                         any(
-                            str(row.get(column, "")).strip()
-                            != original_values.get(str(row.get("_history_key", "")).strip(), {}).get(column, "")
-                            for column in ["교체완료시각", "설비", "날물명", "기준값", "교체 시점 사용량", "담당자", "비고"]
+                            clean_editor_value(row.get(column, ""))
+                            != original_values.get(clean_editor_value(row.get("_history_key", "")), {}).get(column, "")
+                            for column in editable_columns
                         )
                     )
 
                 }
 
-                if note_updates:
-
-                    update_completion_history_fields(note_updates)
-
-                    st.session_state.send_result = "교체완료 시점 수정 내용을 자동 저장했습니다."
-
-                    st.rerun()
+                new_entries = [
+                    entry
+                    for row in edited_rows
+                    if not clean_editor_value(row.get("_history_key", ""))
+                    for entry in [editor_row_to_completion_entry(row)]
+                    if any(entry.get(column, "") for column in editable_columns)
+                ]
 
                 save_col, _ = st.columns([1, 5])
 
-                if save_col.button("수정 저장", key="save_completion_notes", use_container_width=True):
+                if save_col.button("수정/추가 저장", key="save_completion_notes", use_container_width=True):
 
-                    update_completion_history_fields(note_updates)
+                    if note_updates:
 
-                    st.session_state.send_result = "교체완료 시점 수정 내용을 저장했습니다."
+                        update_completion_history_fields(note_updates)
+
+                    for entry in new_entries:
+
+                        add_manual_completion_history(entry)
+
+                    if note_updates or new_entries:
+
+                        st.session_state.send_result = "교체완료 시점 수정/추가 내용을 저장했습니다."
+
+                    else:
+
+                        st.session_state.send_result = "저장할 교체완료 시점 변경 내용이 없습니다."
 
                     st.rerun()
 

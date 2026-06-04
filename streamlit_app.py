@@ -1873,7 +1873,7 @@ def load_remote_completion_history() -> list[dict[str, Any]]:
 
         archive_rows = []
 
-    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, store_rows, remote_rows, archive_rows)
+    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, archive_rows, store_rows, remote_rows)
 
 
 
@@ -6627,6 +6627,14 @@ def main() -> None:
                     for entry in [editor_row_to_completion_entry(row)]
                     if any(entry.get(column, "") for column in editable_columns)
                 ]
+
+                if note_updates:
+
+                    update_completion_history_fields(note_updates)
+
+                    st.session_state.send_result = "교체완료 시점 수정 내용을 저장했습니다."
+
+                    st.rerun()
 
                 save_col, _ = st.columns([1, 5])
 

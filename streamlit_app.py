@@ -166,6 +166,24 @@ COMPLETION_HISTORY_FALLBACK_ROWS = [
         "담당자": "정영훈",
         "비고": "날물 이상없음으로 인한 교체 진행x",
     },
+    {
+        "교체완료시각": "2026-06-04 13:40:51",
+        "설비": "양면 #26",
+        "날물명": "Φ20 날물",
+        "기준값": "10,000 회",
+        "교체 시점 사용량": "10,933 회",
+        "담당자": "김미숙",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
+    },
+    {
+        "교체완료시각": "2026-06-04 11:41:11",
+        "설비": "엣지 #1",
+        "날물명": "AT 날물(후면)",
+        "기준값": "15,000m",
+        "교체 시점 사용량": "16,504m",
+        "담당자": "다닝",
+        "비고": "날물 이상없음으로 인한 교체 진행x",
+    },
 ]
 
 BORING_WORKSHEET_GID_BY_SYNC_TIME = {
@@ -1410,6 +1428,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
     remote_history = load_remote_completion_history()
     local_history: list[dict[str, Any]] = []
+    archive_history: list[dict[str, Any]] = []
 
     if COMPLETION_HISTORY_PATH.exists():
 
@@ -1423,14 +1442,6 @@ def load_completion_history() -> list[dict[str, Any]]:
 
             local_history = []
 
-    # Treat the main local/remote histories as the source of truth. The archive is
-    # only a fallback so edited old rows cannot resurrect after a refresh.
-    if local_history or remote_history:
-
-        return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, local_history, remote_history)
-
-    archive_history: list[dict[str, Any]] = []
-
     if COMPLETION_HISTORY_ARCHIVE_PATH.exists():
 
         try:
@@ -1443,7 +1454,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
             archive_history = []
 
-    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, archive_history)
+    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, archive_history, local_history, remote_history)
 
 
 def load_completion_history_deleted_keys() -> set[str]:
@@ -1891,7 +1902,10 @@ def save_remote_completion_history(
 
     try:
 
-        normalized = filter_completion_history_by_keys(history, excluded_keys)
+        normalized = merge_completion_history(
+            filter_completion_history_by_keys(load_remote_completion_history(), excluded_keys),
+            filter_completion_history_by_keys(history, excluded_keys),
+        )
 
         if not normalized:
 
@@ -2278,6 +2292,7 @@ def save_completion_history(
             archive_history = []
 
     normalized = merge_completion_history(
+        filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, excluded_keys),
         archive_history,
         remote_history,
         filter_completion_history_by_keys(history, excluded_keys),

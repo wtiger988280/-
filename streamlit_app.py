@@ -1445,6 +1445,7 @@ def save_remote_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 def load_completion_history() -> list[dict[str, Any]]:
 
     remote_history = load_remote_completion_history()
+    deleted_keys = load_completion_history_deleted_keys()
     local_history: list[dict[str, Any]] = []
     archive_history: list[dict[str, Any]] = []
 
@@ -1472,7 +1473,12 @@ def load_completion_history() -> list[dict[str, Any]]:
 
             archive_history = []
 
-    return merge_completion_history(COMPLETION_HISTORY_FALLBACK_ROWS, archive_history, local_history, remote_history)
+    return merge_completion_history(
+        filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, deleted_keys),
+        filter_completion_history_by_keys(archive_history, deleted_keys),
+        filter_completion_history_by_keys(local_history, deleted_keys),
+        filter_completion_history_by_keys(remote_history, deleted_keys),
+    )
 
 
 def load_completion_history_deleted_keys() -> set[str]:
@@ -1536,7 +1542,7 @@ def get_completion_standard_label(machine: Any, blade_name: Any) -> str:
 
 def filter_deleted_completion_history(history: list[dict[str, Any]], deleted_keys: set[str] | None = None) -> list[dict[str, Any]]:
 
-    return history
+    return filter_completion_history_by_keys(history, deleted_keys)
 
 
 
@@ -1585,6 +1591,16 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
             completed_at == "2026-05-28 08:05:20"
             and normalized_machine == "런닝 #21"
             and normalized_blade == "Φ5(관통) 날물"
+        ):
+
+            continue
+
+        if (
+            completed_at in {"2026-06-08 08:24:56", "2026-06-08 08:24:31", "2026-06-08 08:24:09"}
+            and (
+                (normalized_machine == "양면 #26" and normalized_blade == "Φ20 날물")
+                or (normalized_machine in {"엣지 #1", "엣지 #2"} and normalized_blade == "AT 날물(후면)")
+            )
         ):
 
             continue

@@ -1484,7 +1484,22 @@ def load_completion_history() -> list[dict[str, Any]]:
 
 def load_completion_history_deleted_keys() -> set[str]:
 
-    # 교체완료 시점은 운영 기록이므로 새로고침/리부트 후에도 숨기지 않습니다.
+    if not COMPLETION_HISTORY_DELETED_KEYS_PATH.exists():
+
+        return set()
+
+    try:
+
+        data = json.loads(COMPLETION_HISTORY_DELETED_KEYS_PATH.read_text(encoding="utf-8"))
+
+        if isinstance(data, list):
+
+            return {str(key).strip() for key in data if str(key).strip()}
+
+    except Exception:
+
+        return set()
+
     return set()
 
 
@@ -3028,6 +3043,18 @@ def save_dashboard_state() -> None:
     if not completion_history:
 
         completion_history = load_completion_history()
+
+    if completion_history:
+
+        COMPLETION_HISTORY_PATH.write_text(
+            json.dumps(completion_history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        COMPLETION_HISTORY_ARCHIVE_PATH.write_text(
+            json.dumps(completion_history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     blade_reset_at = rebuild_blade_reset_at_from_completion_history(
         st.session_state.get("blade_reset_at", {}),

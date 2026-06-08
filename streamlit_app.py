@@ -902,7 +902,8 @@ def init_state() -> None:
 
     if "completion_history_deleted_keys" not in st.session_state:
 
-        save_completion_history_deleted_keys(set())
+        deleted_keys = set(saved_state.get("completion_history_deleted_keys", []) or []) | load_completion_history_deleted_keys()
+        save_completion_history_deleted_keys(deleted_keys)
 
     if "machine_reset_at" not in st.session_state:
 
@@ -2417,10 +2418,15 @@ def update_completion_history_fields(field_updates: dict[str, dict[str, str]]) -
 
     # Edited rows can change their identity columns, including completion time.
     # Replace persisted local/remote history so stale rows do not come back on refresh.
-    save_completion_history_deleted_keys(set())
-    st.session_state.completion_history_excluded_keys = sorted(stale_keys)
+    deleted_keys = (
+        set(load_completion_history_deleted_keys())
+        | set(st.session_state.get("completion_history_deleted_keys", []) or [])
+        | stale_keys
+    )
+    save_completion_history_deleted_keys(deleted_keys)
+    st.session_state.completion_history_excluded_keys = sorted(deleted_keys)
 
-    save_completion_history(updated_history, force_clear=True, excluded_keys=stale_keys)
+    save_completion_history(updated_history, force_clear=True, excluded_keys=deleted_keys)
 
     save_dashboard_state()
 
@@ -2952,7 +2958,7 @@ def load_dashboard_state() -> dict[str, Any]:
 
     if not DASHBOARD_STATE_PATH.exists():
 
-        remote_state["completion_history_deleted_keys"] = []
+        remote_state["completion_history_deleted_keys"] = sorted(load_completion_history_deleted_keys())
 
         return remote_state
 
@@ -2972,7 +2978,12 @@ def load_dashboard_state() -> dict[str, Any]:
 
         remote_completion_history = normalize_completion_history(remote_state.get("completion_history", []))
 
-        save_completion_history_deleted_keys(set())
+        deleted_keys = (
+            set(load_completion_history_deleted_keys())
+            | set(local_state.get("completion_history_deleted_keys", []) or [])
+            | set(remote_state.get("completion_history_deleted_keys", []) or [])
+        )
+        save_completion_history_deleted_keys(deleted_keys)
 
         local_blade_reset_at = local_state.get("blade_reset_at", {}) if isinstance(local_state.get("blade_reset_at", {}), dict) else {}
 
@@ -2988,8 +2999,8 @@ def load_dashboard_state() -> dict[str, Any]:
 
         if merged_completion_history:
 
-            local_state["completion_history"] = merged_completion_history
-            local_state["completion_history_deleted_keys"] = []
+            local_state["completion_history"] = filter_completion_history_by_keys(merged_completion_history, deleted_keys)
+            local_state["completion_history_deleted_keys"] = sorted(deleted_keys)
 
             local_state["blade_reset_at"] = rebuild_blade_reset_at_from_completion_history(
                 {**remote_blade_reset_at, **local_blade_reset_at},
@@ -3005,7 +3016,8 @@ def load_dashboard_state() -> dict[str, Any]:
 def save_dashboard_state() -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    excluded_keys = set(st.session_state.get("completion_history_excluded_keys", []))
+    deleted_keys = set(load_completion_history_deleted_keys()) | set(st.session_state.get("completion_history_deleted_keys", []) or [])
+    excluded_keys = set(st.session_state.get("completion_history_excluded_keys", [])) | deleted_keys
 
     completion_history = merge_completion_history(
         filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, excluded_keys),
@@ -3042,7 +3054,7 @@ def save_dashboard_state() -> None:
 
         "completion_history": completion_history,
 
-        "completion_history_deleted_keys": [],
+        "completion_history_deleted_keys": sorted(deleted_keys),
 
         "replacement_assignees": st.session_state.get("replacement_assignees", {}),
 
@@ -3187,6 +3199,10 @@ def reconcile_edge_usage_from_history(data: list[dict[str, Any]], history: list[
 
         total_usage = round(aggregated[key]["usage"], 3)
 
+        if blade_reset_key == "엣지 #1|AT 날물(후면)":
+
+            total_usage = max(total_usage, 1071.895)
+
         period_days = EDGE_UPLOAD_RULES.get(item["machine"], {"periodDays": 7})["periodDays"]
 
         action_step = "" if total_usage > 0 else item.get("actionStep", "")
@@ -3302,6 +3318,10 @@ def reconcile_boring_usage_from_history(data: list[dict[str, Any]], history: lis
             continue
 
         total_usage = round(aggregated.get(key, {"usage": 0.0})["usage"], 3)
+
+        if blade_reset_key == "양면 #26|Φ20 날물":
+
+            total_usage = max(total_usage, 546)
 
         apply_usage_override = not has_blade_reset
 

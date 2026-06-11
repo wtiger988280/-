@@ -1880,15 +1880,58 @@ def append_completion_history_store(
         excluded_keys,
     )
 
-    next_rows = merge_completion_history(existing_rows, normalized)
-
+    existing_keys = {get_completion_history_key(entry) for entry in existing_rows}
     payload_rows = [
         [json.dumps(entry, ensure_ascii=False, sort_keys=True)]
-        for entry in next_rows
+        for entry in normalized
+        if get_completion_history_key(entry) not in existing_keys
     ]
 
-    store_worksheet.clear()
-    store_worksheet.update([["payload"], *payload_rows], "A1", value_input_option="RAW")
+    if payload_rows:
+
+        store_worksheet.append_rows(payload_rows, value_input_option="RAW")
+
+
+def append_completion_history_worksheet(
+    spreadsheet,
+    worksheet_name: str,
+    history: list[dict[str, Any]],
+) -> None:
+
+    normalized = normalize_completion_history(history)
+
+    if not normalized:
+
+        return
+
+    columns = COMPLETION_HISTORY_COLUMNS
+    worksheet = get_or_create_worksheet(
+        spreadsheet,
+        worksheet_name,
+        rows=max(len(normalized) + 100, 1000),
+        cols=len(columns) + 2,
+    )
+    values = worksheet.get_all_values()
+
+    if not values:
+
+        worksheet.update([columns], "A1", value_input_option="RAW")
+        existing_rows: list[dict[str, Any]] = []
+
+    else:
+
+        existing_rows = worksheet_values_to_completion_history(values)
+
+    existing_keys = {get_completion_history_key(entry) for entry in existing_rows}
+    missing_rows = [
+        [str(entry.get(column, "")).strip() for column in columns]
+        for entry in normalized
+        if get_completion_history_key(entry) not in existing_keys
+    ]
+
+    if missing_rows:
+
+        worksheet.append_rows(missing_rows, value_input_option="RAW")
 
 
 
@@ -1963,76 +2006,8 @@ def save_remote_completion_history(
 
         append_completion_history_store(spreadsheet, normalized, excluded_keys)
 
-        columns = COMPLETION_HISTORY_COLUMNS
-
-        worksheet = get_or_create_worksheet(
-            spreadsheet,
-            COMPLETION_HISTORY_WORKSHEET_NAME,
-            rows=max(len(normalized) + 100, 1000),
-            cols=len(columns) + 2,
-        )
-
-        try:
-
-            existing_remote = filter_completion_history_by_keys(
-                worksheet_values_to_completion_history(worksheet.get_all_values()),
-                excluded_keys,
-            )
-
-        except Exception:
-
-            # Never risk clearing the remote completion archive if it cannot be read first.
-            return
-
-        normalized = merge_completion_history(existing_remote, normalized)
-
-        if not normalized:
-
-            return
-
-        rows = [
-            [
-                str(entry.get(column, "")).strip()
-                for column in columns
-            ]
-            for entry in normalized
-        ]
-
-        worksheet.clear()
-
-        worksheet.update([columns, *rows], "A1", value_input_option="RAW")
-
-        archive_worksheet = get_or_create_worksheet(
-            spreadsheet,
-            COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME,
-            rows=max(len(rows) + 100, 1000),
-            cols=len(columns) + 2,
-        )
-
-        try:
-
-            existing_archive = filter_completion_history_by_keys(
-                worksheet_values_to_completion_history(archive_worksheet.get_all_values()),
-                excluded_keys,
-            )
-
-        except Exception:
-
-            existing_archive = []
-
-        archive_normalized = merge_completion_history(existing_archive, normalized)
-
-        archive_rows = [
-            [
-                str(entry.get(column, "")).strip()
-                for column in columns
-            ]
-            for entry in archive_normalized
-        ]
-
-        archive_worksheet.clear()
-
-        archive_worksheet.update([columns, *archive_rows], "A1", value_input_option="RAW")
+        append_completion_history_worksheet(spreadsheet, COMPLETION_HISTORY_WORKSHEET_NAME, normalized)
+        append_completion_history_worksheet(spreadsheet, COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME, normalized)
 
     except Exception:
 
@@ -2055,40 +2030,11 @@ def append_remote_completion_history(entry: dict[str, Any]) -> None:
 
     row = normalized[0]
 
-    columns = COMPLETION_HISTORY_COLUMNS
-
-    row_values = [str(row.get(column, "")).strip() for column in columns]
-
     try:
 
-        for worksheet_name in [COMPLETION_HISTORY_WORKSHEET_NAME, COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME]:
-
-            worksheet = get_or_create_worksheet(
-                spreadsheet,
-                worksheet_name,
-                rows=1000,
-                cols=len(columns) + 2,
-            )
-
-            values = worksheet.get_all_values()
-
-            if not values:
-
-                worksheet.update([columns], "A1", value_input_option="RAW")
-
-                records = []
-
-            else:
-
-                records = normalize_completion_history(worksheet.get_all_records())
-
-            existing_keys = {get_completion_history_key(existing) for existing in records}
-
-            if get_completion_history_key(row) in existing_keys:
-
-                continue
-
-            worksheet.append_row(row_values, value_input_option="RAW")
+        append_completion_history_store(spreadsheet, [row])
+        append_completion_history_worksheet(spreadsheet, COMPLETION_HISTORY_WORKSHEET_NAME, [row])
+        append_completion_history_worksheet(spreadsheet, COMPLETION_HISTORY_ARCHIVE_WORKSHEET_NAME, [row])
 
     except Exception:
 

@@ -81,6 +81,51 @@ KST = ZoneInfo("Asia/Seoul")
 
 COMPLETION_HISTORY_FALLBACK_ROWS = [
     {
+        "교체완료시각": "2026-06-11 17:34:11",
+        "설비": "런닝 #22",
+        "날물명": "Φ20 날물",
+        "기준값": "50,000 회",
+        "교체 시점 사용량": "56,711 회",
+        "담당자": "정영훈",
+        "비고": "가공깊이부족으로 교환",
+    },
+    {
+        "교체완료시각": "2026-06-10 19:40:54",
+        "설비": "런닝 #19",
+        "날물명": "Φ35 날물",
+        "기준값": "10,000 회",
+        "교체 시점 사용량": "468 회",
+        "담당자": "정영훈",
+        "비고": "날물 교체",
+    },
+    {
+        "교체완료시각": "2026-06-09 20:40:15",
+        "설비": "엣지 #2",
+        "날물명": "AT 날물(후면)",
+        "기준값": "30,000m",
+        "교체 시점 사용량": "0m",
+        "담당자": "권용철",
+        "비고": "깨짐 발생",
+    },
+    {
+        "교체완료시각": "2026-06-09 14:26:02",
+        "설비": "런닝 #20",
+        "날물명": "Φ5(관통) 날물",
+        "기준값": "100,000 회",
+        "교체 시점 사용량": "29,803 회",
+        "담당자": "정영훈",
+        "비고": "날물 이상으로 교체",
+    },
+    {
+        "교체완료시각": "2026-05-21 13:15:26",
+        "설비": "런닝 #19",
+        "날물명": "Φ8(관통) 날물",
+        "기준값": "50,000 회",
+        "교체 시점 사용량": "13,526 회",
+        "담당자": "정영훈",
+        "비고": "날물 교체",
+    },
+    {
         "교체완료시각": "2026-05-09 08:00:52",
         "설비": "엣지 #6",
         "날물명": "AT 날물(후면)",
@@ -2104,6 +2149,7 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
 
     persist_keys = [
         "completion_history",
+        "completion_history_deleted_keys",
         "usage_reset_at",
         "machine_reset_at",
         "blade_reset_at",
@@ -2140,6 +2186,10 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         ):
 
             data["completion_history"] = existing_completion
+
+        existing_deleted_keys = set(existing_state.get("completion_history_deleted_keys", []) or [])
+        next_deleted_keys = set(data.get("completion_history_deleted_keys", []) or [])
+        data["completion_history_deleted_keys"] = sorted(existing_deleted_keys | next_deleted_keys)
 
         for merge_key in ["machine_reset_at", "blade_reset_at", "replace_alert_history", "sheet_sync_hashes"]:
 

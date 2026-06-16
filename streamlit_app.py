@@ -5719,6 +5719,71 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     save_dashboard_state()
 
+    try:
+
+        send_slack_completion_alert(
+            machine=selected_machine,
+            blade_name=selected_blade,
+            usage_label=completion_usage_label,
+            standard_label=format_cycle_value(selected_item, selected_standard),
+            assignee=assignee,
+            note=note,
+            was_replace=was_replace,
+        )
+
+    except Exception:
+
+        pass
+
+
+
+def send_slack_completion_alert(
+    machine: str,
+    blade_name: str,
+    usage_label: str,
+    standard_label: str,
+    assignee: str,
+    note: str,
+    was_replace: bool,
+) -> None:
+
+    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
+
+    if not webhook_url:
+
+        return
+
+    icon = "🔴" if was_replace else "🟡"
+
+    action_type = "교체필요 → 교체 완료" if was_replace else "조기 교체 완료"
+
+    fields = [
+        f"*설비:* {machine}",
+        f"*날물:* {blade_name}",
+        f"*기준값:* {standard_label}",
+        f"*교체 시점 사용량:* {usage_label}",
+        f"*담당자:* {assignee}" if assignee else "",
+        f"*비고:* {note}" if note else "",
+    ]
+
+    fields = [f for f in fields if f]
+
+    payload = {
+        "text": f"{icon} 날물 교체 완료 - {machine} / {blade_name}",
+        "blocks": [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": f"{icon} 날물 교체 완료 처리"},
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*{action_type}*\n" + "\n".join(fields)},
+            },
+        ],
+    }
+
+    requests.post(webhook_url, json=payload, timeout=30)
+
 
 
 def get_action_label(row: dict[str, Any]) -> str:

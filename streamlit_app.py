@@ -1676,6 +1676,15 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
             continue
 
         if (
+            completed_at == "2026-06-16 14:13:52"
+            and normalized_machine == "런닝 #23"
+            and normalized_blade == "Φ5(관통) 날물"
+            and parse_numeric_value(usage_label) == 110152
+        ):
+
+            continue
+
+        if (
             completed_at == "2026-05-20 11:22:45"
             and normalized_machine == "런닝 #21"
             and normalized_blade == "Φ20 날물"

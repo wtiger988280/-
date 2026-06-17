@@ -81,6 +81,15 @@ KST = ZoneInfo("Asia/Seoul")
 
 COMPLETION_HISTORY_FALLBACK_ROWS = [
     {
+        "교체완료시각": "2026-06-17 10:55:26",
+        "설비": "런닝 #19",
+        "날물명": "Φ20 날물",
+        "기준값": "50,000 회",
+        "교체 시점 사용량": "28,149 회",
+        "담당자": "정영훈",
+        "비고": "전체 날물교체",
+    },
+    {
         "교체완료시각": "2026-06-15 09:36:38",
         "설비": "엣지 #5",
         "날물명": "AT 날물(후면)",
@@ -683,6 +692,8 @@ def reset_all_usage_data() -> None:
     st.session_state.equipment_data = next_rows
 
     st.session_state.replace_alert_history = {}
+
+    st.session_state.slack_alert_suppressed_until_data_update = True
 
     st.session_state.last_sheet_sync_details = []
 
@@ -4114,6 +4125,10 @@ def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
 
         return
 
+    if st.session_state.get("slack_alert_suppressed_until_data_update"):
+
+        return
+
     webhook_signature = hashlib.sha1(webhook_url.encode("utf-8")).hexdigest()
 
     alert_history = st.session_state.get("replace_alert_history", {})
@@ -5587,6 +5602,8 @@ def sync_from_google_sheet(
         else:
 
             st.session_state.send_result = f"구글 스프레드시트 자동 반영 완료: {synced_label}"
+
+    st.session_state.slack_alert_suppressed_until_data_update = False
 
     save_dashboard_state()
 

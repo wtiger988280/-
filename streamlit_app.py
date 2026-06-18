@@ -6486,6 +6486,16 @@ def main() -> None:
 
             st.rerun()
 
+        if st.button("Slack 알람 이력 초기화", use_container_width=True):
+
+            st.session_state.replace_alert_history = {}
+
+            save_dashboard_state()
+
+            st.session_state.send_result = "Slack 알람 이력을 초기화했습니다. 교체필요 항목에 다시 알람이 발송됩니다."
+
+            st.rerun()
+
         if st.button("데이터 반영 이력 리셋", use_container_width=True):
 
             reset_sheet_sync_history_data()

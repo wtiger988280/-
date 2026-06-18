@@ -6492,6 +6492,28 @@ def main() -> None:
 
             save_dashboard_state()
 
+            try:
+
+                spreadsheet = get_google_spreadsheet()
+
+                if spreadsheet is not None:
+
+                    worksheet = get_or_create_worksheet(spreadsheet, PERSIST_STATE_WORKSHEET_NAME)
+
+                    all_values = worksheet.get_all_values()
+
+                    for i, row in enumerate(all_values):
+
+                        if row and str(row[0]).strip() == "replace_alert_history":
+
+                            worksheet.update_cell(i + 1, 2, json.dumps({}, ensure_ascii=False))
+
+                            break
+
+            except Exception:
+
+                pass
+
             st.session_state.send_result = "Slack 알람 이력을 초기화했습니다. 교체필요 항목에 다시 알람이 발송됩니다."
 
             st.rerun()

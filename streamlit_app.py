@@ -693,8 +693,6 @@ def reset_all_usage_data() -> None:
 
     st.session_state.replace_alert_history = {}
 
-    st.session_state.slack_alert_suppressed_until_data_update = True
-
     st.session_state.last_sheet_sync_details = []
 
     st.session_state.last_sheet_sync_at = ""
@@ -4125,10 +4123,6 @@ def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
 
         return
 
-    if st.session_state.get("slack_alert_suppressed_until_data_update"):
-
-        return
-
     webhook_signature = hashlib.sha1(webhook_url.encode("utf-8")).hexdigest()
 
     alert_history = st.session_state.get("replace_alert_history", {})
@@ -5602,8 +5596,6 @@ def sync_from_google_sheet(
         else:
 
             st.session_state.send_result = f"구글 스프레드시트 자동 반영 완료: {synced_label}"
-
-    st.session_state.slack_alert_suppressed_until_data_update = False
 
     save_dashboard_state()
 

@@ -42,7 +42,7 @@ APP_DATA_VERSION = "2026-04-28-boring-history-refresh"
 
 
 
-SLACK_DEFAULT_WEBHOOK = ""
+SLACK_DEFAULT_WEBHOOK = "https://hooks.slack.com/services/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"
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KmsdyvfHJEOXnZvGtUl1TEhWz0JzJ3NWkg3Amb8l91U/edit"
 
@@ -6486,35 +6486,47 @@ def main() -> None:
 
             st.rerun()
 
-        if st.button("Slack 알람 이력 초기화", use_container_width=True):
+        if st.button("Slack 교체필요 알람 즉시 전송", use_container_width=True):
 
-            st.session_state.replace_alert_history = {}
+            webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
 
-            save_dashboard_state()
+            if not webhook_url:
 
-            try:
+                st.session_state.send_result = "Slack Webhook URL을 먼저 입력해 주세요."
 
-                spreadsheet = get_google_spreadsheet()
+            else:
 
-                if spreadsheet is not None:
+                enriched_now = enrich_data(st.session_state.get("equipment_data", []))
 
-                    worksheet = get_or_create_worksheet(spreadsheet, PERSIST_STATE_WORKSHEET_NAME)
+                replace_rows = [r for r in enriched_now if r.get("status") == "replace"]
 
-                    all_values = worksheet.get_all_values()
+                sent = 0
 
-                    for i, row in enumerate(all_values):
+                next_history = dict(st.session_state.get("replace_alert_history", {}))
 
-                        if row and str(row[0]).strip() == "replace_alert_history":
+                webhook_signature = hashlib.sha1(webhook_url.encode("utf-8")).hexdigest()
 
-                            worksheet.update_cell(i + 1, 2, json.dumps({}, ensure_ascii=False))
+                for row in replace_rows:
 
-                            break
+                    try:
 
-            except Exception:
+                        send_slack_replace_alert(row)
 
-                pass
+                        alert_key = f"{str(row.get('machine', '')).strip()}|{get_display_blade_name(row)}"
 
-            st.session_state.send_result = "Slack 알람 이력을 초기화했습니다. 교체필요 항목에 다시 알람이 발송됩니다."
+                        next_history[alert_key] = get_replace_alert_signature(row)
+
+                        sent += 1
+
+                    except Exception:
+
+                        pass
+
+                st.session_state.replace_alert_history = next_history
+
+                save_dashboard_state()
+
+                st.session_state.send_result = f"교체필요 {sent}개 항목 Slack 알람을 전송했습니다."
 
             st.rerun()
 

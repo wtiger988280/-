@@ -4087,7 +4087,7 @@ def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
 
 def send_slack_replace_alert(row: dict[str, Any]) -> None:
 
-    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
+    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip() or SLACK_DEFAULT_WEBHOOK
 
     if not webhook_url:
 
@@ -5780,9 +5780,11 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
             was_replace=was_replace,
         )
 
-    except Exception:
+        st.session_state.send_result = message + " (Slack 알람 전송 완료)"
 
-        pass
+    except Exception as e:
+
+        st.session_state.send_result = message + f" (Slack 알람 실패: {e})"
 
 
 
@@ -5796,7 +5798,7 @@ def send_slack_completion_alert(
     was_replace: bool,
 ) -> None:
 
-    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
+    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip() or SLACK_DEFAULT_WEBHOOK
 
     if not webhook_url:
 

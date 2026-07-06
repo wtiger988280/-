@@ -42,7 +42,7 @@ APP_DATA_VERSION = "2026-04-28-boring-history-refresh"
 
 
 
-SLACK_DEFAULT_WEBHOOK = "https://hooks.slack.com/services/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"
+SLACK_DEFAULT_WEBHOOK = ""
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KmsdyvfHJEOXnZvGtUl1TEhWz0JzJ3NWkg3Amb8l91U/edit"
 
@@ -4301,13 +4301,27 @@ def aggregate_history_rows(history_df: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def post_slack_webhook(webhook_url: str, payload: dict[str, Any]) -> None:
+
+    response = requests.post(webhook_url, json=payload, timeout=30)
+
+    response_text = response.text.strip()
+
+    if not response.ok or response_text.lower() != "ok":
+
+        detail = response_text or response.reason or "응답 내용 없음"
+
+        raise RuntimeError(f"Slack 알림 실패: HTTP {response.status_code} / {detail}")
+
+
+
 def send_slack_replace_alert(row: dict[str, Any]) -> None:
 
     webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip() or SLACK_DEFAULT_WEBHOOK
 
     if not webhook_url:
 
-        return
+        raise RuntimeError("Slack Webhook URL이 비어 있습니다.")
 
     assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
 
@@ -4337,11 +4351,7 @@ def send_slack_replace_alert(row: dict[str, Any]) -> None:
         ],
     }
 
-    response = requests.post(webhook_url, json=payload, timeout=30)
-
-    if not response.ok:
-
-        raise RuntimeError(f"Slack 알림 실패: HTTP {response.status_code}")
+    post_slack_webhook(webhook_url, payload)
 
 
 
@@ -6018,7 +6028,7 @@ def send_slack_completion_alert(
 
     if not webhook_url:
 
-        return
+        raise RuntimeError("Slack Webhook URL이 비어 있습니다.")
 
     icon = "🔴" if was_replace else "🟡"
 
@@ -6049,7 +6059,7 @@ def send_slack_completion_alert(
         ],
     }
 
-    requests.post(webhook_url, json=payload, timeout=30)
+    post_slack_webhook(webhook_url, payload)
 
 
 
@@ -6756,6 +6766,8 @@ def main() -> None:
 
                 sent = 0
 
+                failed_messages = []
+
                 next_history = dict(st.session_state.get("replace_alert_history", {}))
 
                 webhook_signature = hashlib.sha1(webhook_url.encode("utf-8")).hexdigest()
@@ -6772,15 +6784,26 @@ def main() -> None:
 
                         sent += 1
 
-                    except Exception:
+                    except Exception as exc:
 
-                        pass
+                        failed_messages.append(
+                            f"{row.get('machine', '')} · {get_display_blade_name(row)}: {exc}"
+                        )
 
                 st.session_state.replace_alert_history = next_history
 
                 save_dashboard_state()
 
-                st.session_state.send_result = f"교체필요 {sent}개 항목 Slack 알람을 전송했습니다."
+                if failed_messages:
+
+                    st.session_state.send_result = (
+                        f"교체필요 {sent}개 항목 Slack 알람 전송 완료, "
+                        f"{len(failed_messages)}개 실패: " + " / ".join(failed_messages[:3])
+                    )
+
+                else:
+
+                    st.session_state.send_result = f"교체필요 {sent}개 항목 Slack 알람을 전송했습니다."
 
             st.rerun()
 

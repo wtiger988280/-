@@ -2435,7 +2435,7 @@ def decode_persist_value(value: Any) -> Any:
 
 def normalize_saved_slack_webhook_url(value: Any) -> str:
 
-    text = str(value or "").strip()
+    text = str(value or "").strip().strip("\"'")
 
     if not text.startswith("https://hooks.slack.com/services/"):
 
@@ -3431,8 +3431,6 @@ def save_dashboard_state() -> None:
         or saved_slack_webhook_url
         or normalize_saved_slack_webhook_url(SLACK_DEFAULT_WEBHOOK)
     )
-
-    st.session_state.slack_webhook_url = slack_webhook_url
 
     data = {
 
@@ -6903,8 +6901,6 @@ def main() -> None:
             webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
 
             if webhook_url:
-
-                st.session_state.slack_webhook_url = webhook_url
 
                 save_dashboard_state()
 

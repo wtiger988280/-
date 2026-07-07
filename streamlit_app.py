@@ -2433,6 +2433,26 @@ def decode_persist_value(value: Any) -> Any:
 
 
 
+def normalize_saved_slack_webhook_url(value: Any) -> str:
+
+    text = str(value or "").strip()
+
+    if not text.startswith("https://hooks.slack.com/services/"):
+
+        return ""
+
+    if any(marker in text.lower() for marker in ["<html", "<body", "<script", "quickstart", "api.slack.com"]):
+
+        return ""
+
+    if len(text) > 500 or any(char.isspace() for char in text):
+
+        return ""
+
+    return text
+
+
+
 def load_remote_dashboard_state() -> dict[str, Any]:
 
     spreadsheet = get_google_spreadsheet()
@@ -2518,6 +2538,10 @@ def save_remote_dashboard_state(data: dict[str, Any]) -> None:
         existing_deleted_keys = set(existing_state.get("completion_history_deleted_keys", []) or [])
         next_deleted_keys = set(data.get("completion_history_deleted_keys", []) or [])
         data["completion_history_deleted_keys"] = sorted(existing_deleted_keys | next_deleted_keys)
+
+        existing_slack_webhook_url = normalize_saved_slack_webhook_url(existing_state.get("slack_webhook_url", ""))
+        next_slack_webhook_url = normalize_saved_slack_webhook_url(data.get("slack_webhook_url", ""))
+        data["slack_webhook_url"] = next_slack_webhook_url or existing_slack_webhook_url
 
         for merge_key in ["machine_reset_at", "blade_reset_at", "replace_alert_history", "sheet_sync_hashes"]:
 
@@ -3316,6 +3340,8 @@ def load_dashboard_state() -> dict[str, Any]:
         local_completion_history = normalize_completion_history(local_state.get("completion_history", []))
 
         remote_completion_history = normalize_completion_history(remote_state.get("completion_history", []))
+        local_slack_webhook_url = normalize_saved_slack_webhook_url(local_state.get("slack_webhook_url", ""))
+        remote_slack_webhook_url = normalize_saved_slack_webhook_url(remote_state.get("slack_webhook_url", ""))
 
         deleted_keys = (
             set(load_completion_history_deleted_keys())
@@ -3329,6 +3355,7 @@ def load_dashboard_state() -> dict[str, Any]:
         remote_blade_reset_at = remote_state.get("blade_reset_at", {}) if isinstance(remote_state.get("blade_reset_at", {}), dict) else {}
 
         local_state.update(remote_state)
+        local_state["slack_webhook_url"] = remote_slack_webhook_url or local_slack_webhook_url
 
         merged_completion_history = merge_completion_history(
             local_completion_history,
@@ -3387,6 +3414,26 @@ def save_dashboard_state() -> None:
 
     st.session_state.blade_reset_at = blade_reset_at
 
+    saved_slack_webhook_url = ""
+
+    try:
+
+        saved_data = json.loads(DASHBOARD_STATE_PATH.read_text(encoding="utf-8")) if DASHBOARD_STATE_PATH.exists() else {}
+
+        saved_slack_webhook_url = normalize_saved_slack_webhook_url(saved_data.get("slack_webhook_url", ""))
+
+    except Exception:
+
+        saved_slack_webhook_url = ""
+
+    slack_webhook_url = (
+        normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+        or saved_slack_webhook_url
+        or normalize_saved_slack_webhook_url(SLACK_DEFAULT_WEBHOOK)
+    )
+
+    st.session_state.slack_webhook_url = slack_webhook_url
+
     data = {
 
         "equipment_data": st.session_state.get("equipment_data", INITIAL_RAW_DATA),
@@ -3395,7 +3442,7 @@ def save_dashboard_state() -> None:
 
         "replace_alert_history": st.session_state.get("replace_alert_history", {}),
 
-        "slack_webhook_url": st.session_state.get("slack_webhook_url", SLACK_DEFAULT_WEBHOOK),
+        "slack_webhook_url": slack_webhook_url,
 
         "last_sheet_sync_at": st.session_state.get("last_sheet_sync_at", ""),
 
@@ -4369,13 +4416,27 @@ def post_slack_webhook(webhook_url: str, payload: dict[str, Any]) -> None:
 
 
 
+def clear_slack_webhook_url() -> None:
+
+    return
+
+
+
+def is_invalid_slack_webhook_error(exc: Exception) -> bool:
+
+    message = str(exc).lower()
+
+    return "no_service" in message or "http 404" in message
+
+
+
 def send_slack_replace_alert(row: dict[str, Any]) -> None:
 
     webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip() or SLACK_DEFAULT_WEBHOOK
 
     if not webhook_url:
 
-        raise RuntimeError("Slack Webhook URL이 비어 있습니다.")
+        return
 
     assignee = str(row.get("assignee", row.get("담당자", ""))).strip()
 
@@ -4482,6 +4543,16 @@ def process_replace_alerts(enriched: list[dict[str, Any]]) -> None:
         except Exception as exc:
 
             next_history[alert_key] = failed_signature
+
+            if is_invalid_slack_webhook_error(exc):
+
+                clear_slack_webhook_url()
+
+                latest_message = (
+                    f"{machine} · {get_display_blade_name(row)} Slack Webhook URL이 만료/삭제된 것 같습니다. 교체알림방 Webhook URL을 다시 확인해 주세요."
+                )
+
+                break
 
             latest_message = f"{machine} · {get_display_blade_name(row)} Slack 알림 전송 실패: {exc}"
 
@@ -6048,6 +6119,8 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
 
     save_dashboard_state()
 
+    slack_webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+
     try:
 
         send_slack_completion_alert(
@@ -6060,11 +6133,24 @@ def handle_action(row_id: int, assignee: str = "", note: str = "") -> None:
             was_replace=was_replace,
         )
 
-        st.session_state.send_result = message + " (Slack 알람 전송 완료)"
+        if slack_webhook_url:
+
+            st.session_state.send_result = message + " (Slack 알람 전송 완료)"
 
     except Exception as e:
 
-        st.session_state.send_result = message + f" (Slack 알람 실패: {e})"
+        if is_invalid_slack_webhook_error(e):
+
+            clear_slack_webhook_url()
+
+            st.session_state.send_result = (
+                message
+                + " (Slack Webhook URL이 만료/삭제된 것 같습니다. 교체알림방 Webhook URL을 다시 확인해 주세요.)"
+            )
+
+        else:
+
+            st.session_state.send_result = message + f" (Slack 알람 실패: {e})"
 
 
 
@@ -6078,11 +6164,14 @@ def send_slack_completion_alert(
     was_replace: bool,
 ) -> None:
 
-    webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip() or SLACK_DEFAULT_WEBHOOK
+    webhook_url = (
+        normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+        or normalize_saved_slack_webhook_url(SLACK_DEFAULT_WEBHOOK)
+    )
 
     if not webhook_url:
 
-        raise RuntimeError("Slack Webhook URL이 비어 있습니다.")
+        return
 
     icon = "🔴" if was_replace else "🟡"
 
@@ -6796,7 +6885,36 @@ def main() -> None:
 
             st.caption(f"자동 연결 갱신: {auto_sheet_updated_at}")
 
+        current_slack_webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
+
+        if current_slack_webhook_url and not normalize_saved_slack_webhook_url(current_slack_webhook_url):
+
+            st.session_state.slack_webhook_url = ""
+
+            st.session_state.send_result = (
+                "Slack Webhook URL 칸에 올바르지 않은 값이 들어가 있어 비웠습니다. "
+                "https://hooks.slack.com/services/ 로 시작하는 Webhook 주소만 넣어 주세요."
+            )
+
         st.text_input("Slack Webhook URL", key="slack_webhook_url", type="password")
+
+        if st.button("Slack Webhook URL 저장", use_container_width=True):
+
+            webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+
+            if webhook_url:
+
+                st.session_state.slack_webhook_url = webhook_url
+
+                save_dashboard_state()
+
+                st.session_state.send_result = "Slack Webhook URL을 저장했습니다."
+
+            else:
+
+                st.session_state.send_result = "Slack Webhook URL은 https://hooks.slack.com/services/ 로 시작해야 합니다."
+
+            st.rerun()
 
         if st.button("사용률 리셋", use_container_width=True):
 
@@ -6806,7 +6924,7 @@ def main() -> None:
 
         if st.button("Slack 교체필요 알람 즉시 전송", use_container_width=True):
 
-            webhook_url = str(st.session_state.get("slack_webhook_url", "")).strip()
+            webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
 
             if not webhook_url:
 
@@ -6839,6 +6957,16 @@ def main() -> None:
                         sent += 1
 
                     except Exception as exc:
+
+                        if is_invalid_slack_webhook_error(exc):
+
+                            clear_slack_webhook_url()
+
+                            failed_messages.append(
+                                "Slack Webhook URL이 만료/삭제된 것 같습니다. 교체알림방 Webhook URL을 다시 확인해 주세요."
+                            )
+
+                            break
 
                         failed_messages.append(
                             f"{row.get('machine', '')} · {get_display_blade_name(row)}: {exc}"

@@ -80,6 +80,7 @@ KST = ZoneInfo("Asia/Seoul")
 
 RUNNING_23_24_30000_MACHINES = {"런닝 #23", "런닝 #24"}
 RUNNING_23_24_30000_BLADES = {"Φ5(관통) 날물", "Φ8(관통) 날물", "Φ20 날물"}
+VERTICAL_1_2_3_30000_MACHINES = {"수직 #1", "수직 #2", "수직 #3"}
 
 
 COMPLETION_HISTORY_FALLBACK_ROWS = [
@@ -809,6 +810,21 @@ def build_initial_raw_data() -> list[dict[str, Any]]:
             ):
 
                 standard = 30000
+
+            if (
+                machine_config["machine"] in VERTICAL_1_2_3_30000_MACHINES
+                and blade_spec["bladeName"] == "Φ5(관통) 날물"
+            ):
+
+                standard = 30000
+
+            if machine_config["line"] == "포인트" and blade_spec["bladeName"] == "Φ5(관통) 날물":
+
+                standard = 50000
+
+            if machine_config["line"] == "포인트" and blade_spec["bladeName"] == "Φ8(관통) 날물":
+
+                standard = 20000
 
             row = {
 
@@ -2141,6 +2157,18 @@ def normalize_completion_history(history: list[dict[str, Any]]) -> list[dict[str
         if normalized_machine in RUNNING_23_24_30000_MACHINES and normalized_blade in RUNNING_23_24_30000_BLADES:
 
             standard_label = "30,000 회"
+
+        if normalized_machine in VERTICAL_1_2_3_30000_MACHINES and normalized_blade == "Φ5(관통) 날물":
+
+            standard_label = "30,000 회"
+
+        if normalized_machine.startswith("포인트") and normalized_blade == "Φ5(관통) 날물":
+
+            standard_label = "50,000 회"
+
+        if normalized_machine.startswith("포인트") and normalized_blade == "Φ8(관통) 날물":
+
+            standard_label = "20,000 회"
 
         if not standard_label:
 
@@ -4882,6 +4910,18 @@ def get_boring_standard(machine: Any, blade_name: Any) -> int:
     if normalized_machine in RUNNING_23_24_30000_MACHINES and normalized_blade in RUNNING_23_24_30000_BLADES:
 
         return 30000
+
+    if normalized_machine in VERTICAL_1_2_3_30000_MACHINES and normalized_blade == "Φ5(관통) 날물":
+
+        return 30000
+
+    if normalized_machine.startswith("포인트") and normalized_blade == "Φ5(관통) 날물":
+
+        return 50000
+
+    if normalized_machine.startswith("포인트") and normalized_blade == "Φ8(관통) 날물":
+
+        return 20000
 
     if normalized_blade == "Φ5(관통) 날물":
 

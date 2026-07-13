@@ -7212,8 +7212,6 @@ def main() -> None:
 
             st.session_state.line_machine_filter = "전체"
 
-            st.rerun()
-
         for idx, line_name in enumerate(available_lines, start=1):
 
             active = st.session_state.get("line_filter_toggle", "all") == line_name
@@ -7225,8 +7223,6 @@ def main() -> None:
                 st.session_state.line_filter_toggle = line_name
 
                 st.session_state.line_machine_filter = "전체"
-
-                st.rerun()
 
         active_line_filter = st.session_state.get("line_filter_toggle", "all")
 
@@ -7249,8 +7245,6 @@ def main() -> None:
             if st.session_state.get("line_machine_filter", "전체") != previous_machine_filter:
 
                 st.session_state.pop("normal_replacement_prompt", None)
-
-                st.rerun()
 
         filtered = [
 
@@ -7420,7 +7414,18 @@ def main() -> None:
 
                 }
 
-                with st.form("completion_history_editor_form", clear_on_submit=False):
+                editor_context_key = hashlib.sha1(
+                    "|".join(
+                        [
+                            str(active_line_filter),
+                            str(active_machine_filter),
+                            str(selected_completion_machine),
+                            str(selected_completion_blade),
+                        ]
+                    ).encode("utf-8")
+                ).hexdigest()[:12]
+
+                with st.form(f"completion_history_editor_form_{editor_context_key}", clear_on_submit=False):
 
                     edited_completion_df = st.data_editor(
 
@@ -7436,7 +7441,7 @@ def main() -> None:
 
                         num_rows="dynamic",
 
-                        key="completion_note_editor",
+                        key=f"completion_note_editor_{editor_context_key}",
 
                     )
 

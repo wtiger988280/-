@@ -6529,9 +6529,9 @@ def render_normal_replacement_prompt() -> None:
 
             form_cols = st.columns(2)
 
-            submitted = form_cols[0].form_submit_button("교체 처리", width="stretch")
+            submitted = form_cols[0].form_submit_button("교체 처리", use_container_width=True)
 
-            cancelled = form_cols[1].form_submit_button("취소", width="stretch")
+            cancelled = form_cols[1].form_submit_button("취소", use_container_width=True)
 
             if submitted:
 
@@ -6758,7 +6758,7 @@ def render_equipment_table(rows: list[dict[str, Any]]) -> None:
 
                 action_key_prefix = "completed" if action_label == "교체완료" else ("replace" if action_label == "교체필요" else "normal")
 
-                if row_cols[8].button(action_label, key=f"table_action_{action_key_prefix}_{row['id']}", width="stretch", type=button_type):
+                if row_cols[8].button(action_label, key=f"table_action_{action_key_prefix}_{row['id']}", use_container_width=True, type=button_type):
 
                     assignee = str(st.session_state.get(assignee_widget_key, "")).strip()
 
@@ -7002,7 +7002,7 @@ def main() -> None:
 
         target_machine = st.selectbox("기본 대상 설비", target_options, key="sheet_target_machine")
 
-        if st.button("지금 반영", width="stretch"):
+        if st.button("지금 반영", use_container_width=True):
 
             try:
 
@@ -7042,7 +7042,7 @@ def main() -> None:
 
         st.text_input("Slack Webhook URL", key="slack_webhook_url_input", type="password")
 
-        if st.button("Slack Webhook URL 저장", width="stretch"):
+        if st.button("Slack Webhook URL 저장", use_container_width=True):
 
             webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url_input", ""))
 
@@ -7060,13 +7060,13 @@ def main() -> None:
 
             st.rerun()
 
-        if st.button("사용률 리셋", width="stretch"):
+        if st.button("사용률 리셋", use_container_width=True):
 
             reset_all_usage_data()
 
             st.rerun()
 
-        if st.button("Slack 교체필요 알람 즉시 전송", width="stretch"):
+        if st.button("Slack 교체필요 알람 즉시 전송", use_container_width=True):
 
             webhook_url = (
                 normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url_input", ""))
@@ -7138,19 +7138,19 @@ def main() -> None:
 
             st.rerun()
 
-        if st.button("데이터 반영 이력 리셋", width="stretch"):
+        if st.button("데이터 반영 이력 리셋", use_container_width=True):
 
             reset_sheet_sync_history_data()
 
             st.rerun()
 
-        if st.button("교체완료 시점 리셋", width="stretch"):
+        if st.button("교체완료 시점 리셋", use_container_width=True):
 
             reset_completion_history_data()
 
             st.rerun()
 
-        if st.button("교체완료 시점 저장", width="stretch"):
+        if st.button("교체완료 시점 저장", use_container_width=True):
 
             preserve_completion_history_data()
 
@@ -7204,7 +7204,7 @@ def main() -> None:
 
         line_button_cols = st.columns(len(available_lines) + 1)
 
-        if line_button_cols[0].button("전체", key="line_toggle_all", width="stretch", type="primary" if st.session_state.get("line_filter_toggle", "all") == "all" else "secondary"):
+        if line_button_cols[0].button("전체", key="line_toggle_all", use_container_width=True, type="primary" if st.session_state.get("line_filter_toggle", "all") == "all" else "secondary"):
 
             st.session_state.pop("normal_replacement_prompt", None)
 
@@ -7218,7 +7218,7 @@ def main() -> None:
 
             active = st.session_state.get("line_filter_toggle", "all") == line_name
 
-            if line_button_cols[idx].button(line_name, key=f"line_toggle_{line_name}", width="stretch", type="primary" if active else "secondary"):
+            if line_button_cols[idx].button(line_name, key=f"line_toggle_{line_name}", use_container_width=True, type="primary" if active else "secondary"):
 
                 st.session_state.pop("normal_replacement_prompt", None)
 
@@ -7324,7 +7324,7 @@ def main() -> None:
                     placeholder="예: 잔이바리로 인한 날물 교체",
                 )
 
-                if st.form_submit_button("교체완료 시점 추가", width="stretch"):
+                if st.form_submit_button("교체완료 시점 추가", use_container_width=True):
 
                     add_manual_completion_history(
                         {
@@ -7395,7 +7395,7 @@ def main() -> None:
 
                     editable_completion_df,
 
-                    width="stretch",
+                    use_container_width=True,
 
                     hide_index=True,
 
@@ -7476,7 +7476,7 @@ def main() -> None:
 
                 save_col, _ = st.columns([1, 5])
 
-                if save_col.button("수정/추가 저장", key="save_completion_notes", width="stretch"):
+                if save_col.button("수정/추가 저장", key="save_completion_notes", use_container_width=True):
 
                     if note_updates:
 
@@ -7591,7 +7591,7 @@ def main() -> None:
 
             if not history_df.empty:
 
-                st.dataframe(format_sync_display_dataframe(history_df), width="stretch", hide_index=True)
+                st.dataframe(format_sync_display_dataframe(history_df), use_container_width=True, hide_index=True)
 
             else:
 
@@ -7639,5 +7639,6 @@ if __name__ == "__main__":
         st.error("대시보드 실행 중 오류가 발생했습니다. 아래 내용을 Codex에 보내 주세요.")
 
         st.exception(exc)
+
 
 

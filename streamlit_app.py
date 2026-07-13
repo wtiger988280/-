@@ -7630,6 +7630,14 @@ def main() -> None:
 
 if __name__ == "__main__":
 
-    main()
+    try:
+
+        main()
+
+    except Exception as exc:
+
+        st.error("대시보드 실행 중 오류가 발생했습니다. 아래 내용을 Codex에 보내 주세요.")
+
+        st.exception(exc)
 
 

@@ -7391,24 +7391,6 @@ def main() -> None:
 
                 )
 
-                edited_completion_df = st.data_editor(
-
-                    editable_completion_df,
-
-                    use_container_width=True,
-
-                    hide_index=True,
-
-                    disabled=["_history_key"],
-
-                    column_config={"_history_key": None},
-
-                    num_rows="dynamic",
-
-                    key="completion_note_editor",
-
-                )
-
                 def clean_editor_value(value: Any) -> str:
 
                     if pd.isna(value):
@@ -7438,6 +7420,28 @@ def main() -> None:
 
                 }
 
+                with st.form("completion_history_editor_form", clear_on_submit=False):
+
+                    edited_completion_df = st.data_editor(
+
+                        editable_completion_df,
+
+                        use_container_width=True,
+
+                        hide_index=True,
+
+                        disabled=["_history_key"],
+
+                        column_config={"_history_key": None},
+
+                        num_rows="dynamic",
+
+                        key="completion_note_editor",
+
+                    )
+
+                    save_submitted = st.form_submit_button("수정/추가 저장", use_container_width=True)
+
                 edited_rows = edited_completion_df.to_dict(orient="records")
 
                 note_updates = {
@@ -7466,9 +7470,7 @@ def main() -> None:
                     if any(entry.get(column, "") for column in editable_columns)
                 ]
 
-                save_col, _ = st.columns([1, 5])
-
-                if save_col.button("수정/추가 저장", key="save_completion_notes", use_container_width=True):
+                if save_submitted:
 
                     if note_updates:
 

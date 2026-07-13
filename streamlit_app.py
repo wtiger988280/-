@@ -1435,7 +1435,10 @@ def init_state() -> None:
 
     if "slack_webhook_url" not in st.session_state:
 
-        st.session_state.slack_webhook_url = saved_state.get("slack_webhook_url", SLACK_DEFAULT_WEBHOOK)
+        st.session_state.slack_webhook_url = (
+            normalize_saved_slack_webhook_url(saved_state.get("slack_webhook_url", ""))
+            or normalize_saved_slack_webhook_url(SLACK_DEFAULT_WEBHOOK)
+        )
 
     if "auto_sheet_url" not in st.session_state:
 
@@ -7042,13 +7045,21 @@ def main() -> None:
                 "https://hooks.slack.com/services/ 로 시작하는 Webhook 주소만 넣어 주세요."
             )
 
-        st.text_input("Slack Webhook URL", key="slack_webhook_url", type="password")
+        if "slack_webhook_url_input" not in st.session_state:
+
+            st.session_state.slack_webhook_url_input = normalize_saved_slack_webhook_url(
+                st.session_state.get("slack_webhook_url", "")
+            )
+
+        st.text_input("Slack Webhook URL", key="slack_webhook_url_input", type="password")
 
         if st.button("Slack Webhook URL 저장", use_container_width=True):
 
-            webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+            webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url_input", ""))
 
             if webhook_url:
+
+                st.session_state.slack_webhook_url = webhook_url
 
                 save_dashboard_state()
 
@@ -7068,13 +7079,18 @@ def main() -> None:
 
         if st.button("Slack 교체필요 알람 즉시 전송", use_container_width=True):
 
-            webhook_url = normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+            webhook_url = (
+                normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url_input", ""))
+                or normalize_saved_slack_webhook_url(st.session_state.get("slack_webhook_url", ""))
+            )
 
             if not webhook_url:
 
                 st.session_state.send_result = "Slack Webhook URL을 먼저 입력해 주세요."
 
             else:
+
+                st.session_state.slack_webhook_url = webhook_url
 
                 enriched_now = enrich_data(st.session_state.get("equipment_data", []))
 

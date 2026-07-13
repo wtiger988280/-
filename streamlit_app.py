@@ -53,6 +53,7 @@ LOG_DIR = WORK_DIR / "logs"
 LATEST_UPLOAD_INFO_PATH = LOG_DIR / "latest_sheet_upload.json"
 
 SHEET_SYNC_HISTORY_PATH = LOG_DIR / "sheet_sync_history.json"
+SHEET_SYNC_HISTORY_SEED_PATH = WORK_DIR / "sheet_sync_history_seed.json"
 
 COMPLETION_HISTORY_PATH = LOG_DIR / "completion_history.json"
 
@@ -1800,33 +1801,41 @@ def load_latest_upload_info_from_sheet() -> dict[str, str]:
 
 def load_sheet_sync_history() -> list[dict[str, Any]]:
 
-    remote_history = load_sheet_sync_history_from_sheet()
-
     local_history: list[dict[str, Any]] = []
 
-    if not SHEET_SYNC_HISTORY_PATH.exists():
+    for history_path in [SHEET_SYNC_HISTORY_PATH, SHEET_SYNC_HISTORY_SEED_PATH]:
+
+        if not history_path.exists():
+
+            continue
+
+        try:
+
+            data = json.loads(history_path.read_text(encoding="utf-8"))
+
+            if isinstance(data, list):
+
+                local_history = remove_duplicate_zero_history_rows(data)
+
+                if history_path == SHEET_SYNC_HISTORY_PATH and local_history != data:
+
+                    save_sheet_sync_history(local_history)
+
+                break
+
+        except Exception:
+
+            local_history = []
+
+    if local_history:
+
+        return local_history
+
+    remote_history = load_sheet_sync_history_from_sheet()
+
+    if remote_history:
 
         return remove_duplicate_zero_history_rows(remote_history)
-
-    try:
-
-        data = json.loads(SHEET_SYNC_HISTORY_PATH.read_text(encoding="utf-8"))
-
-        if isinstance(data, list):
-
-            local_history = remove_duplicate_zero_history_rows(data)
-
-            if local_history != data:
-
-                save_sheet_sync_history(local_history)
-
-    except Exception:
-
-        local_history = []
-
-    if remote_history or local_history:
-
-        return remove_duplicate_zero_history_rows(merge_sheet_sync_history(local_history, remote_history))
 
     return []
 

@@ -7433,6 +7433,9 @@ def main() -> None:
 
             if not completion_df.empty:
 
+                completion_df = completion_df.reset_index(drop=True)
+                completion_df.insert(0, "번호", range(1, len(completion_df) + 1))
+
                 editable_completion_df = format_sync_display_dataframe(completion_df)
 
                 editable_completion_df["_history_key"] = completion_df.apply(
@@ -7493,7 +7496,7 @@ def main() -> None:
 
                         hide_index=True,
 
-                        disabled=["_history_key"],
+                        disabled=["번호", "_history_key"],
 
                         column_config={"_history_key": None},
 

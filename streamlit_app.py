@@ -7496,6 +7496,8 @@ def main() -> None:
 
                         hide_index=True,
 
+                        column_order=["번호", *editable_columns, "_history_key"],
+
                         disabled=["번호", "_history_key"],
 
                         column_config={"_history_key": None},

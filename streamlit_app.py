@@ -1982,6 +1982,20 @@ def load_completion_history() -> list[dict[str, Any]]:
     deleted_keys = load_completion_history_deleted_keys()
     local_history: list[dict[str, Any]] = []
     archive_history: list[dict[str, Any]] = []
+    seed_history: list[dict[str, Any]] = []
+
+    seed_path = Path("completion_history_seed.json")
+    if seed_path.exists():
+
+        try:
+
+            seed_data = json.loads(seed_path.read_text(encoding="utf-8"))
+
+            seed_history = normalize_completion_history(seed_data if isinstance(seed_data, list) else [])
+
+        except Exception:
+
+            seed_history = []
 
     if COMPLETION_HISTORY_PATH.exists():
 
@@ -2009,6 +2023,7 @@ def load_completion_history() -> list[dict[str, Any]]:
 
     return merge_completion_history(
         filter_completion_history_by_keys(COMPLETION_HISTORY_FALLBACK_ROWS, deleted_keys),
+        filter_completion_history_by_keys(seed_history, deleted_keys),
         filter_completion_history_by_keys(archive_history, deleted_keys),
         filter_completion_history_by_keys(local_history, deleted_keys),
         filter_completion_history_by_keys(remote_history, deleted_keys),

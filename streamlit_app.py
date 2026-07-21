@@ -7015,9 +7015,11 @@ def main() -> None:
 
     # edge and boring so previous days' history does not get rebuilt away.
 
-    effective_history = normalize_sheet_sync_history(
+    effective_history = merge_sheet_sync_history(
 
-        st.session_state.get("sheet_sync_history", [])
+        load_sheet_sync_history(),
+
+        st.session_state.get("sheet_sync_history", []),
 
     )
 

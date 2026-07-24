@@ -1954,9 +1954,37 @@ def save_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-    normalized = remove_duplicate_zero_history_rows(history)
+    existing_history: list[dict[str, Any]] = []
+
+    for history_path in [SHEET_SYNC_HISTORY_PATH, SHEET_SYNC_HISTORY_SEED_PATH]:
+
+        if not history_path.exists():
+
+            continue
+
+        try:
+
+            data = json.loads(history_path.read_text(encoding="utf-8"))
+
+            if isinstance(data, list):
+
+                existing_history = merge_sheet_sync_history(existing_history, data)
+
+        except Exception:
+
+            continue
+
+    normalized = merge_sheet_sync_history(existing_history, history)
 
     SHEET_SYNC_HISTORY_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    try:
+
+        SHEET_SYNC_HISTORY_SEED_PATH.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    except Exception:
+
+        pass
 
     save_remote_sheet_sync_history(normalized)
 
@@ -1971,7 +1999,7 @@ def save_remote_sheet_sync_history(history: list[dict[str, Any]]) -> None:
 
     try:
 
-        normalized = remove_duplicate_zero_history_rows(history)
+        normalized = merge_sheet_sync_history(load_sheet_sync_history_from_sheet(), history)
 
         columns = ["반영시각", "대상", "설비", "날물명", "데이터 기준일자", "반영 사용량(m)", "반영 사용량(회)"]
 
@@ -6095,7 +6123,10 @@ def sync_from_google_sheet(
 
     if history_entries and (not is_duplicate_sync or should_replace_boring_history):
 
-        previous_history = st.session_state.get("sheet_sync_history", [])
+        previous_history = merge_sheet_sync_history(
+            load_sheet_sync_history(),
+            st.session_state.get("sheet_sync_history", []),
+        )
 
         if should_replace_boring_history:
 

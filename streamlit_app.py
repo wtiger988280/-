@@ -1896,29 +1896,21 @@ def load_sheet_sync_history() -> list[dict[str, Any]]:
 
             if isinstance(data, list):
 
-                local_history = remove_duplicate_zero_history_rows(data)
+                normalized_history = remove_duplicate_zero_history_rows(data)
 
-                if history_path == SHEET_SYNC_HISTORY_PATH and local_history != data:
+                local_history = merge_sheet_sync_history(local_history, normalized_history)
 
-                    save_sheet_sync_history(local_history)
+                if history_path == SHEET_SYNC_HISTORY_PATH and normalized_history != data:
 
-                break
+                    save_sheet_sync_history(normalized_history)
 
         except Exception:
 
-            local_history = []
-
-    if local_history:
-
-        return local_history
+            continue
 
     remote_history = load_sheet_sync_history_from_sheet()
 
-    if remote_history:
-
-        return remove_duplicate_zero_history_rows(remote_history)
-
-    return []
+    return merge_sheet_sync_history(local_history, remote_history)
 
 
 
